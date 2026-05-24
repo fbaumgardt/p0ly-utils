@@ -1,7 +1,7 @@
 [project]
 name = "p0ly-utils"
 version = "0.1.0"
-description = "Add your description here"
+description = "EEG utilities for preprocessing, epoching, and Psychtoolbox experiment metadata"
 readme = "README.md"
 authors = [
     { name = "Frederik Baumgardt", email = "fbaumgardt@posteo.de" }
@@ -21,7 +21,58 @@ build-backend = "uv_build"
 [dependency-groups]
 dev = [
     "hypothesis>=6.152.9",
+    "mypy>=1.15.0",
+    "pandas-stubs",
+    "pre-commit>=4.0.0",
     "pytest>=9.0.3",
     "pytest-cov>=7.1.0",
     "ruff>=0.15.14",
 ]
+
+[tool.uv]
+package = true
+
+[tool.uv.build-backend]
+module-name = "p0ly_utils"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.ruff]
+target-version = "py313"
+src = ["src", "tests"]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+ignore = ["E501"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.coverage.run]
+source = ["p0ly_utils"]
+
+[tool.coverage.report]
+fail_under = 0
+show_missing = true
+
+[tool.mypy]
+python_version = "3.13"
+files = [
+    "src/p0ly_utils/metadata/core.py",
+    "src/p0ly_utils/metadata/parser.py",
+    "src/p0ly_utils/metadata/dotprobe.py",
+    "src/p0ly_utils/metadata/mgsearch.py",
+    "src/p0ly_utils/metadata/dmss.py",
+    "src/p0ly_utils/metadata/__init__.py",
+    "tests",
+]
+namespace_packages = true
+explicit_package_bases = true
+mypy_path = ["src"]
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
