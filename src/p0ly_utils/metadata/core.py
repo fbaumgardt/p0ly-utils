@@ -130,7 +130,7 @@ class RTMeasure:
         rt = end - begin
         if self.nan_if_negative and rt < 0:
             return float("nan")
-        return rt
+        return float(rt)
 
 
 @dataclass

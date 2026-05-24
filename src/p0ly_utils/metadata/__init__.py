@@ -1,3 +1,4 @@
+from p0ly_utils.metadata import dmss, dotprobe, mgsearch
 from p0ly_utils.metadata.core import (
     BoolPresence,
     CodeLookup,
@@ -11,8 +12,6 @@ from p0ly_utils.metadata.core import (
     WholeRecording,
 )
 from p0ly_utils.metadata.parser import parse_metadata
-
-from p0ly_utils.metadata import dmss, dotprobe, mgsearch
 
 __all__ = [
     "BoolPresence",
