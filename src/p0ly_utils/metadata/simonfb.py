@@ -1,5 +1,6 @@
 # Event codes for SimonFB -- READY FOR TESTING
-import numpy as np, pandas as pd
+import numpy as np
+import pandas as pd
 
 # for timelocks
 stimulus_id = {'all':'Stim/S 12'}

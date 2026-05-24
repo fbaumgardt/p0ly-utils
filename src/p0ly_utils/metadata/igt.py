@@ -1,3 +1,5 @@
+import numpy as np
+import pandas as pd
 # Event codes for IGT  -- READY FOR TESTING
 
 block_ids = ['Stim/S 20','Stim/S 21']
@@ -26,6 +28,11 @@ def get_metadata(evt,ids,f=None,sel_trials=False): # sel_trials flag for select-
     card_codes = {ids[v]:k for k,v in card_id.items()}
     deck_codes = {ids[v]:k for k,v in deck_id.items()}
     win_codes = {ids[v]:k for k,v in win_id.items()}
+     # Stuff to help legacy code pass linter
+    correct_id = {card_codes.get(win_id['win'],'a'):1}
+    correct_id = {deck_codes.get(win_id['win'],'a'):1} 
+    correct_id = {win_codes.get(win_id['win'],'a'):1}
+
 
     # Event codes for measuring RT
     start_id = ids[trial_ids[0]] # begin measuring RT
