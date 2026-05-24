@@ -1,0 +1,169 @@
+# =============================================================================
+# PYTHON
+# =============================================================================
+
+# Virtual environments
+venv/
+.env/
+.venv/
+env/
+ENV/
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Package build artifacts
+*.egg-info/
+dist/
+build/
+*.egg
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Jupyter / IPython
+.ipynb_checkpoints/
+*.nbconvert.ipynb
+profile_default/
+ipython_config.py
+
+# Data & model artifacts (often large / binary)
+*.h5
+*.hdf5
+*.pkl
+*.pickle
+*.joblib
+*.sav
+*.pt
+*.pth
+*.onnx
+*.pb
+saved_model/
+
+# =============================================================================
+# JUPYTER NOTEBOOKS
+# =============================================================================
+
+# Auto-saved checkpoint files
+.ipynb_checkpoints/
+
+# Executed notebook outputs (if you strip outputs via nbstripout / pre-commit)
+# Uncomment if you version-control stripped notebooks:
+# *.nbconvert.ipynb
+
+# Jupyter runtime
+.jupyter/
+jupyter_notebook_config.py
+jupyter_server_config.py
+
+# =============================================================================
+# R / BIOCONDUCTOR
+# =============================================================================
+
+# R project files
+.Rproj.user/
+*.Rproj
+.Rhistory
+.RData
+.Ruserdata
+.renv/
+
+# renv library (reproducible env, but not for indexing)
+renv/library/
+renv/staging/
+renv/local/
+renv/cellar/
+
+# Packrat (legacy R dependency management)
+packrat/lib*/
+packrat/src/
+
+# Bioconductor build artifacts
+*.tar.gz
+ vignettes/*.html
+ vignettes/*.pdf
+ vignettes/figure/
+
+# Compiled R code
+*.o
+*.so
+*.dll
+
+# =============================================================================
+# DATA & OUTPUTS (project-specific, adjust as needed)
+# =============================================================================
+
+# Raw data directories (often large)
+data/raw/
+data/external/
+data/interim/
+
+# Generated outputs
+results/
+figures/
+plots/
+tables/
+reports/
+output/
+tmp/
+temp/
+
+# Common bioinformatics formats (often large / binary)
+*.bam
+*.bai
+*.sam
+*.cram
+*.crai
+*.fastq
+*.fastq.gz
+*.fq
+*.fq.gz
+*.fasta
+*.fa
+*.fna
+*.ffn
+*.faa
+*.mpfa
+*.frn
+*.vcf
+*.vcf.gz
+*.tbi
+*.bcf
+*.bed
+*.bed.gz
+*.gff
+*.gff3
+*.gtf
+*.bigWig
+*.bigBed
+*.wig
+*.narrowPeak
+*.broadPeak
+
+# =============================================================================
+# ENVIRONMENT & SECRETS
+# =============================================================================
+
+# Credentials & config
+.env
+.env.*
+!.env.example
+secrets/
+config/local*
+*.pem
+*.key
+
+# =============================================================================
+# IDE & SYSTEM
+# =============================================================================
+
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
