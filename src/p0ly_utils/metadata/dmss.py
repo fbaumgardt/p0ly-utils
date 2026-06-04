@@ -2,7 +2,6 @@
 from p0ly_utils.metadata.core import (
     ExperimentSpec,
     IntSum,
-    PairedMarkers,
     RTMeasure,
 )
 from p0ly_utils.metadata.parser import parse_metadata
@@ -32,8 +31,9 @@ spec = ExperimentSpec(
     name="dmss",
     timelocks=timelocks,
     intervals=intervals,
-    block_strategy=PairedMarkers("Stim/S  3", "Stim/S  4"),
-    trial_strategy=PairedMarkers("Stim/S  5", "Stim/S  6"),
+    block_codes=["Stim/S  3"],
+    trial_codes=["Stim/S  5"],
+    #trial_end_codes=["Stim/S  6"],
     columns={
         "Size": IntSum({"Stim/S 11": 1, "Stim/S 25": 2, "Stim/S 43": 4}),
         "Correct": IntSum({"Stim/S 64": 1}),
@@ -48,5 +48,6 @@ spec = ExperimentSpec(
     ],
 )
 
-def get_metadata(evt, ids, f=None):
-    return parse_metadata(spec, evt, ids, csv_path=f)
+
+def get_metadata(df, f=None):
+    return parse_metadata(spec, df, csv_path=f)
