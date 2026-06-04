@@ -1,47 +1,193 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import pandas as pd
 
-from p0ly_utils.metadata.core import ExperimentSpec, InferFromColumn
+from p0ly_utils.metadata.core import DerivedColumn, ExperimentSpec
+
+# Canonical "Nothing" value: carries the exact schema that the downstream
+# groupby(["_Block", "_Trial"]) in parse_metadata depends on, so an empty
+# pipeline still produces a well-typed (zero-row) frame instead of a KeyError.
+_EMPTY_EVENTS = pd.DataFrame(columns=["description", "onset", "_Block", "_Trial"])
+
+
+def _bind(df: pd.DataFrame, fn: Callable[[pd.DataFrame], pd.DataFrame]) -> pd.DataFrame:
+    """Maybe-monad bind: an empty frame is ``Nothing`` and short-circuits the chain."""
+    return _EMPTY_EVENTS.copy() if df.empty else fn(df)
 
 
 def _infer_blocks(df: pd.DataFrame, column: str) -> pd.DataFrame:
     if df.empty:
         return df
-    blocks = [1]
-    for row in range(1, len(df)):
-        if df[column].iloc[row - 1] != df[column].iloc[row]:
-            blocks.append(blocks[-1] + 1)
-        else:
-            blocks.append(blocks[-1])
     df = df.copy()
-    df["Block"] = blocks
+    df["Block"] = (df[column] != df[column].shift()).cumsum()
+    return df
+
+
+def _select_events(spec: ExperimentSpec, df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    # Recordings label markers "Stimulus/..." but specs use the abbreviated
+    # "Stim/..." form; normalise here so spec codes match before filtering.
+    df["description"] = df["description"].transform(lambda x: x.replace("Stimulus", "Stim"))
+    return df[["description", "onset"]].loc[
+        lambda e: e["description"].isin(spec.event_codes())
+    ]
+
+
+def _assign_blocks_trials(spec: ExperimentSpec, events: pd.DataFrame) -> pd.DataFrame:
+    _col_codes = spec.column_codes()
+    events = events.copy()
+    # Each block marker opens a new block; cumsum turns the marker positions
+    # into a running 1-based-ish block id shared by every row until the next one.
+    events["_Block"] = events["description"].isin(spec.block_codes).cumsum()
+    # Drop blocks that never carry a data-bearing code (e.g. warm-up / leading
+    # markers before the first real block), so they don't become phantom trials.
+    events = events[
+        events.groupby("_Block")["description"].transform(
+            lambda g: g.isin(_col_codes).any()
+        )
+    ]
+    # Re-base surviving block ids to start at 1 after the leading drop above.
+    events["_Block"] = events["_Block"] - (events["_Block"].min() - 1)
+
+    # trial_end is a bool used as a shift amount: when trials are delimited by
+    # their *end* marker (shift=1) the boundary is moved forward one row so the
+    # marker is counted with the trial it closes rather than the next one.
+    events['_TrialBegin'] = events["description"].isin(spec.trial_codes).shift(spec.trial_end,fill_value=False)
+    events['_Trial'] = events.groupby("_Block")['_TrialBegin'].cumsum()
+    # Same phantom-trial guard as for blocks, now per (block, trial) group.
+    events = events[
+        events.groupby(["_Block", "_Trial"])["description"].transform(
+            lambda g: g.isin(_col_codes).any()
+        )
+    ]
+    # Re-base trial ids to start at 1 within each block (cummin == per-block min).
+    events['_Trial'] -= events.groupby("_Block")['_Trial'].cummin()-1
+
+    return events.drop(columns=['_TrialBegin'])
+
+
+def _prepare_event_frame(spec: ExperimentSpec, df: pd.DataFrame) -> pd.DataFrame:
+    # `.pipe(_bind, f)` == `_bind(frame, f)`, so each step is a monadic bind:
+    # the first empty frame (no input, or nothing survived filtering) short-
+    # circuits to _EMPTY_EVENTS and the later stages are skipped.
+    return (
+        df
+        .pipe(_bind, lambda d: _select_events(spec, d))
+        .pipe(_bind, lambda e: _assign_blocks_trials(spec, e))
+    )
+
+
+def _extract_row(spec: ExperimentSpec, group: pd.DataFrame, block: int, trial: int) -> dict:
+    row: dict = {"Block": block, "Trial": trial}
+    # Two passes over `columns`: plain extractors read from the event group,
+    # while DerivedColumns read from the row built so far. The second loop must
+    # run last so every value a DerivedColumn depends on is already populated.
+    for col_name, extractor in spec.columns.items():
+        if not isinstance(extractor, DerivedColumn):
+            row[col_name] = extractor.extract(group)
+    for rt_def in spec.rt_defs:
+        row[rt_def.name] = rt_def.extract(group)
+    for col_name, extractor in spec.columns.items():
+        if isinstance(extractor, DerivedColumn):
+            row[col_name] = extractor.derive(row)
+    return row
+
+
+def _trial_start_onset(group: pd.DataFrame, spec: ExperimentSpec) -> float:
+    # t=0 for per-selection reaction times: prefer the first RT measure's start
+    # marker (the experiment's defined trial onset) and fall back to the generic
+    # trial code when no RT is defined.
+    if spec.rt_defs:
+        codes = spec.rt_defs[0].start
+    else:
+        codes = spec.trial_codes
+    return float(group.loc[group["description"].isin(codes), "onset"].sum())
+
+
+def _expand_trial_rows(
+    spec: ExperimentSpec,
+    group: pd.DataFrame,
+    base_row: dict,
+    expand_trials: bool,
+) -> list[dict]:
+    assert spec.trial_expander is not None
+    expander = spec.trial_expander
+    sel_rows = group.loc[group["description"] == expander.event_code]
+    total_sels = len(sel_rows)
+    if total_sels == 0:
+        return [base_row]
+
+    # When not expanding, collapse a multi-selection trial to a single row
+    # describing only the final selection (Total_Sel still reflects the full count).
+    if not expand_trials:
+        sel_rows = sel_rows.iloc[-1:]
+
+    begin = _trial_start_onset(group, spec)
+    trial_lists = {
+        col_name: extractor.extract(group)
+        for col_name, extractor in expander.per_event_columns.items()
+    }
+
+    expanded: list[dict] = []
+    for k, (_, sel) in enumerate(sel_rows.iterrows()):
+        sub_row = base_row.copy()
+        sub_row["RT_Select"] = float(sel["onset"] - begin)
+        sub_row["Num_Sel"] = k
+        sub_row["Total_Sel"] = total_sels
+        for col_name in expander.per_event_columns:
+            val = trial_lists[col_name]
+            # Per-event extractors yield a list aligned to selection order; pick
+            # the k-th entry (blank if the lists are ragged). Scalars apply to all.
+            if isinstance(val, list):
+                sub_row[col_name] = val[k] if k < len(val) else ""
+            else:
+                sub_row[col_name] = val
+        expanded.append(sub_row)
+    return expanded
+
+
+def _merge_csv(
+    df: pd.DataFrame,
+    spec: ExperimentSpec,
+    csv_path: str,
+) -> pd.DataFrame:
+    if spec.csv_columns is None:
+        return df
+    csv_df = pd.read_csv(csv_path)
+    df = df.copy()
+    # External CSV is aligned to trials *positionally* (row i <-> trial i), not by
+    # any key: truncate when the CSV is longer, pad with NaN (reindex) when shorter.
+    # `.values` strips the CSV index so assignment aligns by position, not label.
+    for output_col, (csv_col, transform_fn) in spec.csv_columns.items():
+        if len(csv_df) >= len(df):
+            values = csv_df[csv_col].iloc[: len(df)].map(transform_fn)
+        else:
+            values = csv_df[csv_col].map(transform_fn)
+            values = values.reindex(range(len(df)))
+        df[output_col] = values.values
     return df
 
 
 def parse_metadata(
     spec: ExperimentSpec,
-    evt,
-    ids: dict[str, int],
+    df: pd.DataFrame,
     csv_path: str | None = None,
+    expand_trials: bool = False,
 ) -> pd.DataFrame:
-    del csv_path  # reserved for future CSV merge support
-
+    events = _prepare_event_frame(spec, df)
     rows: list[dict] = []
-    blocks = spec.block_strategy.segment(evt, ids)
-    for block_idx, (block_start, block_end) in enumerate(blocks):
-        evt_b = evt[block_start:block_end, :]
-        trials = spec.trial_strategy.segment(evt_b, ids)
-        for trial_idx, (trial_start, trial_end) in enumerate(trials):
-            evt_t = evt_b[trial_start:trial_end, :]
-            row: dict = {"Block": block_idx + 1, "Trial": trial_idx + 1}
-            for col_name, extractor in spec.columns.items():
-                row[col_name] = extractor.extract(evt_t, ids)
-            for rt_def in spec.rt_defs:
-                row[rt_def.name] = rt_def.extract(evt_t, ids)
+    for (block, trial), group in events.groupby(["_Block", "_Trial"], sort=True):
+        row = _extract_row(spec, group, int(block), int(trial))
+        if spec.trial_expander is not None:
+            rows.extend(_expand_trial_rows(spec, group, row, expand_trials))
+        else:
             rows.append(row)
 
-    df = pd.DataFrame(rows)
-    if isinstance(spec.block_strategy, InferFromColumn):
-        df = _infer_blocks(df, spec.block_strategy.column)
-    return df
+    result = pd.DataFrame(rows)
+    if spec.infer_block_from is not None:
+        result = _infer_blocks(result, spec.infer_block_from)
+    if csv_path is not None and spec.csv_columns is not None:
+        result = _merge_csv(result, spec, csv_path)
+    return result
