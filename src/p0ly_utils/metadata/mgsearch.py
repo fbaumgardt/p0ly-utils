@@ -2,9 +2,7 @@
 from p0ly_utils.metadata.core import (
     CodeLookup,
     ExperimentSpec,
-    InferFromColumn,
     IntSum,
-    PairedMarkers,
     RTMeasure,
 )
 from p0ly_utils.metadata.parser import parse_metadata
@@ -23,21 +21,12 @@ intervals = {
     "resp": (-1.2, 0.2),
 }
 
-rt_ids = {
-    "start": [timelocks["prob"]["nomatch"], timelocks["prob"]["match"]],
-    "end": [
-        timelocks["resp"]["incorrect"],
-        timelocks["resp"]["correct"],
-        timelocks["resp"]["none"],
-    ],
-}
-
 spec = ExperimentSpec(
     name="mgsearch",
     timelocks=timelocks,
     intervals=intervals,
-    block_strategy=InferFromColumn("Cue_side", end=-1),
-    trial_strategy=PairedMarkers("Stim/S182", "Stim/S183", offset=(1, 0)),
+    trial_codes=["Stim/S182"],
+    infer_block_from="Cue_side",
     columns={
         "TO1": IntSum({f"Stim/S{201 + i}": i + 1 for i in range(8)}),
         "TO2": IntSum({f"Stim/S{209 + i}": i + 1 for i in range(8)}),
@@ -65,5 +54,6 @@ spec = ExperimentSpec(
     ],
 )
 
-def get_metadata(evt, ids, f=None):
-    return parse_metadata(spec, evt, ids, csv_path=f)
+
+def get_metadata(df, f=None):
+    return parse_metadata(spec, df, csv_path=f)

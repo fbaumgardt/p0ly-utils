@@ -3,13 +3,10 @@ from p0ly_utils.metadata.core import (
     BoolPresence,
     CodeLookup,
     ExperimentSpec,
-    PairedMarkers,
     RTMeasure,
-    WholeRecording,
 )
 from p0ly_utils.metadata.parser import parse_metadata
 
-block_ids = ["Stim/S103"]
 trial_ids = ["Stim/S  9", "Stim/S 10"]
 
 timelocks = {
@@ -24,14 +21,12 @@ intervals = {
     "resp": (-1.2, 0.2),
 }
 
-rt_ids = {"start": [timelocks["cue"]["all"]], "end": [timelocks["resp"]["yes"]]}
-
 spec = ExperimentSpec(
     name="dotprobe",
     timelocks=timelocks,
     intervals=intervals,
-    block_strategy=WholeRecording(),
-    trial_strategy=PairedMarkers("Stim/S  9", "Stim/S 10", offset=(0, 0)),
+    block_codes=["Stim/S103"],
+    trial_codes=["Stim/S  9"],
     columns={
         "Cue_type": CodeLookup(
             {"salient": "Stim/S 11", "mix": "Stim/S 12", "neutral": "Stim/S 13"}
@@ -45,5 +40,6 @@ spec = ExperimentSpec(
     rt_defs=[RTMeasure("RT", start=["Stim/S 14"], end=["Stim/S 30"])],
 )
 
-def get_metadata(evt, ids, f=None):
-    return parse_metadata(spec, evt, ids, csv_path=f)
+
+def get_metadata(df, f=None):
+    return parse_metadata(spec, df, csv_path=f)
