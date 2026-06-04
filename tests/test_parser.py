@@ -6,16 +6,6 @@ import pandas as pd
 import pytest
 
 from p0ly_utils.metadata import dmss, dotprobe, igt, intwm, mgsearch, simonfb
-from p0ly_utils.metadata.core import (
-    BoolPresence,
-    CodeLookup,
-    DerivedColumn,
-    ExpandOnEvent,
-    ExperimentSpec,
-    IntSum,
-    RTMeasure,
-)
-from p0ly_utils.metadata.parser import parse_metadata
 
 
 def _events(rows: list[tuple[float, str]]) -> pd.DataFrame:

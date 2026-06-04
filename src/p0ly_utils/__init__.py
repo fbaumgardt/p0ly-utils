@@ -1,3 +1,3 @@
-import p0ly_utils.metadata
+from p0ly_utils import metadata as metadata
 
 __all__ = ["metadata"]
