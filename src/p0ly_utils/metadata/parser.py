@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import cast
 
 import pandas as pd
 
@@ -29,7 +30,7 @@ def _select_events(spec: ExperimentSpec, df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     # Recordings label markers "Stimulus/..." but specs use the abbreviated
     # "Stim/..." form; normalise here so spec codes match before filtering.
-    df["description"] = df["description"].transform(lambda x: x.replace("Stimulus", "Stim"))
+    df["description"] = df["description"].str.replace("Stimulus", "Stim", regex=False)
     return df[["description", "onset"]].loc[
         lambda e: e["description"].isin(spec.event_codes())
     ]
@@ -179,7 +180,7 @@ def parse_metadata(
     events = _prepare_event_frame(spec, df)
     rows: list[dict] = []
     for (block, trial), group in events.groupby(["_Block", "_Trial"], sort=True):
-        row = _extract_row(spec, group, int(block), int(trial))
+        row = _extract_row(spec, group, cast(int, block), cast(int, trial))
         if spec.trial_expander is not None:
             rows.extend(_expand_trial_rows(spec, group, row, expand_trials))
         else:

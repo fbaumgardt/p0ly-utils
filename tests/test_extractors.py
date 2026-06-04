@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from typing import Any
 
 import pandas as pd
 import pytest
@@ -162,7 +163,7 @@ class TestRTMeasure:
 
 class TestExperimentSpec:
     def _make_spec(self, **kwargs) -> ExperimentSpec:
-        defaults = dict(
+        defaults: dict[str, Any] = dict(
             name="test",
             timelocks={},
             intervals={},
