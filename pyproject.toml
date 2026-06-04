@@ -61,12 +61,7 @@ show_missing = true
 [tool.mypy]
 python_version = "3.13"
 files = [
-    "src/p0ly_utils/metadata/core.py",
-    "src/p0ly_utils/metadata/parser.py",
-    "src/p0ly_utils/metadata/dotprobe.py",
-    "src/p0ly_utils/metadata/mgsearch.py",
-    "src/p0ly_utils/metadata/dmss.py",
-    "src/p0ly_utils/metadata/__init__.py",
+    "src/p0ly_utils/metadata",
     "tests",
 ]
 namespace_packages = true

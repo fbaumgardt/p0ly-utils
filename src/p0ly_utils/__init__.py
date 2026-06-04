@@ -1,2 +1,3 @@
-def hello() -> str:
-    return "Hello from p0ly-eeg!"
+import p0ly_utils.metadata
+
+__all__ = ["metadata"]

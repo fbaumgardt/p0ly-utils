@@ -17,3 +17,6 @@ wheels/
 htmlcov/
 *.cover
 .hypothesis/
+
+# Data
+*.fif.gz
