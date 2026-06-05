@@ -1,0 +1,13 @@
+{
+    "eeg": ["Cz", "Fz", "Oz", "Pz", "C3", "C4", "F3", "F4", "P3", "P4",
+    "C1", "C2", "F1", "F2", "O1", "O2", "P1", "P2",
+    "C5", "C6", "F5", "F6", "P5", "P6",
+    "F7", "F8", "P7", "P8", "T7", "T8",
+    "AFz", "CPz", "FCz", "POz",
+    "AF3", "AF4", "CP3", "CP4", "FC3", "FC4", "PO3", "PO4",
+    "CP1", "CP2", "FC1", "FC2", "CP5", "CP6", "FC5", "FC6",
+    "AF7", "AF8", "FT7", "FT8", "PO7", "PO8", "TP7", "TP8",
+    "TP9", "TP10", "F10", "F9", "O10", "O9", "P10", "P9",
+    "PO10", "PO9", "FT10", "FT9", "Fp1", "Fp2", "Fpz", "Iz"],
+    "eog": ["BVEOG", "TVEOG", "RHEOG", "LHEOG"]
+}
