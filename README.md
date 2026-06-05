@@ -4,6 +4,13 @@ EEG utilities library (`p0ly_utils`) for preprocessing, epoching, and metadata p
 
 ![CI](https://github.com/fbaumgardt/p0ly-utils/actions/workflows/ci.yml/badge.svg?branch=main)
 
+This library provides functionality that supports EEG analysis pipeline development. In particular it is used in p0ly-eeg -- a set of analysis workflows used for research at Boston University's Reinhart Lab for Computational Cognitive Neuroscience.
+
+Part of the library is a module (`metadata`) that parses EEG event markers into structured metadata for detailed trial characterization. The abstract layer `core` and `parser` is instantiated with concrete experiment specs in the remaining files in the module. The experiments were chosen to showcase a broad range of different block- and trial-structures, and different levels of verbosity in event code definition (e.g. block and trial boundaries coded or implicit).
+
+The `preprocessing` overlaps with a number of different Python packages that implement similar functionality, and perhaps more robustly (pyprep, autoreject, mne-faster). The purpose of maintaining our in-house solutions is the flexibility to handle edge cases of data corruption (e.g. from stimulation) and target highly specific signal-to-noise compromises (e.g. for very small or very large sample sizes). If you don't have specific technical requirements, please refer to these published and peer-reviewed packages.
+
+
 
 ## Install
 
