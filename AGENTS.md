@@ -43,9 +43,8 @@ This project uses a declarative spec pattern for EEG metadata extraction. When w
 ## 5. Testing Conventions
 
 * Always run `uv run pytest` before considering any change complete.
-* Tests in `tests/test_metadata_migration.py` validate new parser output against reference implementations in `metadata/_legacy.py`.
-* **Never modify `_legacy.py`.** It exists solely as an oracle for regression testing.
-* When adding a new experiment spec, add a corresponding test class with at minimum a `test_matches_legacy` method that compares `get_metadata()` output against the legacy function.
+* But only run time-consuming ICA-related tests after changes to `preprocessing.py`.
+* `tests/data/` contains real-world examples that should be used to construct valid tests.
 
 ## 6. Type Annotations and Dataclass Conventions
 
