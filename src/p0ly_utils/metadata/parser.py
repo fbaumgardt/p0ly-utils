@@ -81,7 +81,7 @@ def _prepare_event_frame(spec: ExperimentSpec, df: pd.DataFrame) -> pd.DataFrame
 
 
 def _extract_row(spec: ExperimentSpec, group: pd.DataFrame, block: int, trial: int) -> dict:
-    row: dict = {"Block": block, "Trial": trial}
+    row: dict = {"Block": block, "Trial": trial, "Onset": float(group["onset"].iloc[0])}
     # Two passes over `columns`: plain extractors read from the event group,
     # while DerivedColumns read from the row built so far. The second loop must
     # run last so every value a DerivedColumn depends on is already populated.
