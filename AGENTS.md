@@ -96,13 +96,7 @@ When working in `src/p0ly_utils/metadata/`:
 - Generic parser drives all experiments via `parse_metadata(spec, df)`
 - New extraction patterns → new `ColumnExtractor` subclass in `core.py`, not parser changes
 
-<<<<<<< HEAD
 See [ADR-002](../scrum/04_Specs/ADR-002_declarative-metadata-specs.md).
-=======
-* Always run `uv run pytest` before considering any change complete.
-* But only run time-consuming ICA-related tests after changes to `preprocessing.py`.
-* `tests/data/` contains real-world examples that should be used to construct valid tests.
->>>>>>> 3bdfa83 (Remove outdated tests from AGENTS.md)
 
 ---
 
