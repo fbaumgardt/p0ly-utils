@@ -1,55 +1,110 @@
-# Agent Directives: Data Analysis Pipeline
+# Agent Directives: p0ly-eeg (Core Math & Signal Processing Library)
 
-## 1. Core Philosophy & Abstraction Hierarchy
+You are an expert neural signal processing engineer. Your sole focus in this directory is maintaining, testing, and expanding the mathematical, statistical, and algorithmic foundations of `p0ly-eeg`.
 
-Your primary goal is to write elegant, performant, and highly abstract data pipelines. You must exhaust all built-in library methods before dropping down to lower levels of abstraction.
+Import name: `p0ly_utils` (package name: `p0ly-utils`).
 
-Follow this strict hierarchy of execution:
-1. **MNE-Python Native:** Always use MNE's built-in methods (e.g., `raw.filter()`, `epochs.average()`, `mne.compute_covariance()`) before extracting raw arrays.
-2. **Pandas Vectorized Operations:** For tabular event and metadata logic, compose pandas methods idiomatically — `.isin()`, `.cumsum()`, `.groupby().transform()`, boolean Series indexing. Pandas sits above NumPy because its labeled, higher-level operations should be preferred for structured data before dropping to raw arrays.
-3. **NumPy Vectorization/Broadcasting:** If neither MNE nor Pandas provides the right abstraction, extract data via `get_data()` or `.to_numpy()` and use purely vectorized NumPy operations.
-4. **Standard Python:** Use standard Python data structures (lists, dicts, for-loops) ONLY for file I/O, configuration management, or when libraries explicitly require it.
+Shared Python conventions: see root [AGENTS.md](../AGENTS.md).
 
-## 2. Negative Constraints (Strictly Banned Patterns)
+---
 
-* **No `for` loops over channels or epochs:** Never iterate over EEG channels or epochs manually.
-* **No premature data extraction:** Do not call `get_data()` on MNE objects unless you are immediately passing the output to a vectorized NumPy function or scikit-learn pipeline. Keep data in MNE objects to preserve metadata for as long as possible.
-* **No row-wise DataFrame iteration:** Never use `pandas.iterrows()`, or `pandas.apply()` with a Python lambda that operates row-by-row. These are loop-in-disguise patterns. Use vectorized Series operations or `groupby(...).transform(...)` instead.
-* **Prefer inline composition for linear transforms:** For sequential transformations with no branching, compose operations inline (e.g. `df["x"].isin(codes).shift(1).cumsum()`). Named intermediates are acceptable when a value is reused, logic branches, or readability clearly benefits.
+## 1. Module Scope (PRD Alignment)
 
-## 3. Translation Anchors (Few-Shot Examples)
+Every utility must align with [scrum/04_Specs/PRD_Core_App.md](../scrum/04_Specs/PRD_Core_App.md). Implement pure, tested functions accepting MNE objects or NumPy arrays:
 
-Use the following table to calibrate your definition of elegant code.
+1. **Custom Preprocessing**
+   - Peak-to-peak Z-score channel detection on continuous data
+   - 500ms sliding-window peak-to-peak epoch rejection
+   - Automated ICA (find_bads_eog / mne-icalabel)
+2. **Sensor & Spectral**
+   - Group grand-averaging and cluster-based permutation tests
+   - Absolute/relative PSD and 1/f aperiodic parameterization
+   - Morlet/multitaper TFR and ITPC
+3. **Advanced Dynamics & Networks**
+   - Connectivity matrices (Coherence, PLV, wPLI) and graph metrics
+   - Phase-amplitude coupling comodulograms
+4. **Statistical ML & Decoding**
+   - Single-trial OLS regression against `Epochs.metadata`
+   - Temporal generalization decoding with scikit-learn estimators
 
-| Library | Novice Approach (Banned) | Elegant Approach (Required) |
+---
+
+## 2. Package Structure
+
+```
+src/p0ly_utils/
+├── __init__.py          # Re-exports metadata, preprocessing
+├── preprocessing.py     # Channel fix, artefact rejection, ICA
+├── epoching.py          # align_epochs_metadata()
+└── metadata/
+    ├── core.py          # ExperimentSpec, ColumnExtractor ABCs
+    ├── parser.py        # parse_metadata() — experiment-agnostic
+    └── {experiment}.py  # One spec module per Psychtoolbox experiment
+```
+
+- New analysis modules go alongside `preprocessing.py` and `epoching.py`
+- New experiments get a spec file in `metadata/` only — never modify `parser.py` for experiment-specific logic
+- Legacy code stays in `_legacy/` and is not exported
+
+---
+
+## 3. Architectural Constraints
+
+- **Pure functions:** Stateless, deterministic, decoupled from filesystem paths and Snakemake rules
+- **Data shape rigor:** Every function signature includes NumPy-style docstrings with explicit dimensionalities per [SCHEMA](../scrum/04_Specs/SCHEMA.md)
+- **Core environment:** MNE-Python, NumPy, SciPy, Pandas, scikit-learn, mne-icalabel, mne-connectivity
+
+---
+
+## 4. Abstraction Hierarchy
+
+Exhaust built-in library methods before dropping to lower abstraction levels:
+
+1. **MNE-Python Native** — `raw.filter()`, `epochs.average()`, `mne.compute_covariance()` before extracting arrays
+2. **Pandas Vectorized** — `.isin()`, `.cumsum()`, `.groupby().transform()` for tabular metadata logic
+3. **NumPy Vectorized** — `get_data()` / `.to_numpy()` only when passing to vectorized NumPy or scikit-learn
+4. **Standard Python** — lists, dicts, for-loops only for I/O, config, or when libraries require it
+
+---
+
+## 5. Negative Constraints (Banned Patterns)
+
+- **No `for` loops over channels or epochs**
+- **No premature data extraction** — keep data in MNE objects until vectorized NumPy is required
+- **No row-wise DataFrame iteration** — no `iterrows()`, no `apply()` with row-wise lambdas
+- **Prefer inline composition** for linear transforms; named intermediates when reused or branching
+
+---
+
+## 6. Translation Anchors
+
+| Library | Banned | Required |
 | :--- | :--- | :--- |
-| **MNE** | Looping `epochs` to average: `[e.mean() for e in epochs]` | Native method: `epochs.average()` |
-| **MNE** | Modifying channels via loop | Native mapping: `raw.rename_channels(mapping_dict)` |
-| **MNE / NumPy** | Looping to apply a custom function | Vectorized injection: `raw.apply_function(np.log10)` |
-| **NumPy** | Nested loops for matrix math | `np.einsum()` or native broadcasting |
-| **NumPy** | Masking with loops and `if` statements | Boolean indexing: `data[data > threshold] = 0` |
-| **Pandas** | Sequential mutations: `df['a'] = 1`, `df['b'] = 2` | Method chaining: `df.assign(a=1, b=2).query(...)` |
-| **Pandas** | Loop to flag trial boundaries: `for i, row in df.iterrows(): ...` | Vectorized composition: `df["description"].isin(codes).cumsum()` |
+| **MNE** | `[e.mean() for e in epochs]` | `epochs.average()` |
+| **MNE** | Loop over channels to rename | `raw.rename_channels(mapping_dict)` |
+| **NumPy** | Nested loops for matrix math | `np.einsum()` or broadcasting |
+| **Pandas** | `for i, row in df.iterrows()` | `df["description"].isin(codes).cumsum()` |
 
-## 4. Metadata Architecture
+---
 
-This project uses a declarative spec pattern for EEG metadata extraction. When working in `src/p0ly_utils/metadata/`:
+## 7. Metadata Architecture
 
-* Each experiment has its own spec module (e.g. `metadata/dmss.py`, `metadata/dotprobe.py`) that defines an `ExperimentSpec` dataclass instance.
-* Column extraction is entirely declarative: use the provided `ColumnExtractor` subclasses — `CodeLookup`, `IntSum`, `BoolPresence`, `ListCollect`, `DerivedColumn` — to describe what to extract from each trial group.
-* The generic parser (`metadata/parser.py`) drives all experiments via `parse_metadata(spec, df)`. It is experiment-agnostic.
-* **Do not modify parser logic for experiment-specific behavior.** New experiments require only a new spec file. If a new extraction pattern is needed, add a new `ColumnExtractor` subclass in `core.py`.
+When working in `src/p0ly_utils/metadata/`:
 
-## 5. Testing Conventions
+- Each experiment defines an `ExperimentSpec` instance in its own module
+- Column extraction uses `ColumnExtractor` subclasses: `CodeLookup`, `IntSum`, `BoolPresence`, `ListCollect`, `DerivedColumn`
+- Generic parser drives all experiments via `parse_metadata(spec, df)`
+- New extraction patterns → new `ColumnExtractor` subclass in `core.py`, not parser changes
 
-* Always run `uv run pytest` before considering any change complete.
-* Tests in `tests/test_metadata_migration.py` validate new parser output against reference implementations in `metadata/_legacy.py`.
-* **Never modify `_legacy.py`.** It exists solely as an oracle for regression testing.
-* When adding a new experiment spec, add a corresponding test class with at minimum a `test_matches_legacy` method that compares `get_metadata()` output against the legacy function.
+See [ADR-002](../scrum/04_Specs/ADR-002_declarative-metadata-specs.md).
 
-## 6. Type Annotations and Dataclass Conventions
+---
 
-* All modules use `from __future__ import annotations` at the top.
-* Data containers are `@dataclass` classes with fully typed fields.
-* Use `field(default_factory=list)` or `field(default_factory=dict)` for mutable defaults — never bare `[]` or `{}` as default values.
-* Prefer `X | None` union syntax over `Optional[X]`.
+## 8. Testing Conventions
+
+- Run `uv run pytest` before considering any change complete
+- Run ICA-related tests only after changes to `preprocessing.py` (they are slow)
+- `tests/data/` contains real-world fixtures — use them for valid tests
+- New analysis functions require unit tests with simulated MNE data or synthetic sinusoids
+
+Verification gates: [DoD](../scrum/04_Specs/DoD.md).
