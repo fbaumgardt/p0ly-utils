@@ -1,0 +1,42 @@
+name: igt
+timelocks:
+  select:
+    all: "Stim/S 40"
+  submit:
+    all: "Stim/S 50"
+  fdb:
+    all: "Stim/S 60"
+intervals:
+  select: [-1.2, 0.2]
+  submit: [-1.2, 0.2]
+  fdb: [-0.2, 1.2]
+trial_codes:
+  - "Stim/S 30"
+block_codes:
+  - "Stim/S 20"
+columns:
+  Result:
+    type: int_sum
+    code_map:
+      "Stim/S 61": 1
+rt_defs:
+  - name: RT_Submit
+    start: ["Stim/S 30"]
+    end: ["Stim/S 50"]
+trial_expander:
+  event_code: "Stim/S 40"
+  per_event_columns:
+    Card:
+      type: list_collect
+      code_map:
+        A: "Stim/S 41"
+        B: "Stim/S 42"
+        C: "Stim/S 43"
+        D: "Stim/S 44"
+    Deck:
+      type: list_collect
+      code_map:
+        "1": "Stim/S 45"
+        "2": "Stim/S 46"
+        "3": "Stim/S 47"
+        "4": "Stim/S 48"

@@ -1,0 +1,152 @@
+name: mgsearch
+timelocks:
+  stim:
+    left: "Stim/S 10"
+    right: "Stim/S 11"
+  prob:
+    nomatch: "Stim/S110"
+    match: "Stim/S111"
+  resp:
+    correct: "Stim/S189"
+    incorrect: "Stim/S190"
+    none: "Stim/S191"
+intervals:
+  stim: [-0.2, 1.2]
+  prob: [-0.2, 1.2]
+  resp: [-1.2, 0.2]
+trial_codes:
+  - "Stim/S182"
+infer_block_from: Cue_side
+columns:
+  TO1:
+    type: int_sum
+    code_map:
+      "Stim/S201": 1
+      "Stim/S202": 2
+      "Stim/S203": 3
+      "Stim/S204": 4
+      "Stim/S205": 5
+      "Stim/S206": 6
+      "Stim/S207": 7
+      "Stim/S208": 8
+  TO2:
+    type: int_sum
+    code_map:
+      "Stim/S209": 1
+      "Stim/S210": 2
+      "Stim/S211": 3
+      "Stim/S212": 4
+      "Stim/S213": 5
+      "Stim/S214": 6
+      "Stim/S215": 7
+      "Stim/S216": 8
+  DO1:
+    type: int_sum
+    code_map:
+      "Stim/S217": 1
+      "Stim/S218": 2
+      "Stim/S219": 3
+      "Stim/S220": 4
+      "Stim/S221": 5
+      "Stim/S222": 6
+      "Stim/S223": 7
+      "Stim/S224": 8
+  DO2:
+    type: int_sum
+    code_map:
+      "Stim/S225": 1
+      "Stim/S226": 2
+      "Stim/S227": 3
+      "Stim/S228": 4
+      "Stim/S229": 5
+      "Stim/S230": 6
+      "Stim/S231": 7
+      "Stim/S232": 8
+  NO1:
+    type: int_sum
+    code_map:
+      "Stim/S233": 1
+      "Stim/S234": 2
+      "Stim/S235": 3
+      "Stim/S236": 4
+      "Stim/S237": 5
+      "Stim/S238": 6
+      "Stim/S239": 7
+      "Stim/S240": 8
+  NO2:
+    type: int_sum
+    code_map:
+      "Stim/S241": 1
+      "Stim/S242": 2
+      "Stim/S243": 3
+      "Stim/S244": 4
+      "Stim/S245": 5
+      "Stim/S246": 6
+      "Stim/S247": 7
+      "Stim/S248": 8
+  Cue_side:
+    type: code_lookup
+    code_map:
+      left: "Stim/S 10"
+      right: "Stim/S 11"
+  TT_match:
+    type: int_sum
+    code_map:
+      "Stim/S110": 0
+      "Stim/S111": 1
+  DT_match:
+    type: int_sum
+    code_map:
+      "Stim/S160": 0
+      "Stim/S161": 1
+  TLoc:
+    type: int_sum
+    code_map:
+      "Stim/S121": 1
+      "Stim/S122": 2
+      "Stim/S123": 3
+      "Stim/S124": 4
+      "Stim/S125": 5
+      "Stim/S126": 6
+      "Stim/S127": 7
+      "Stim/S128": 8
+      "Stim/S129": 9
+      "Stim/S130": 10
+      "Stim/S131": 11
+      "Stim/S132": 12
+  TOr:
+    type: int_sum
+    code_map:
+      "Stim/S141": 1
+      "Stim/S142": 2
+      "Stim/S143": 3
+      "Stim/S144": 4
+      "Stim/S145": 5
+      "Stim/S146": 6
+      "Stim/S147": 7
+      "Stim/S148": 8
+  DOr:
+    type: int_sum
+    code_map:
+      "Stim/S151": 1
+      "Stim/S152": 2
+      "Stim/S153": 3
+      "Stim/S154": 4
+      "Stim/S155": 5
+      "Stim/S156": 6
+      "Stim/S157": 7
+      "Stim/S158": 8
+  Resp_type:
+    type: code_lookup
+    code_map:
+      "yes": "Stim/S192"
+      "no": "Stim/S193"
+      none: "Stim/S194"
+  Correct:
+    type: int_sum
+    code_map:
+      "Stim/S189": 1
+rt_defs:
+  - name: RT
+    start: ["Stim/S110", "Stim/S111"]
+    end: ["Stim/S189", "Stim/S190", "Stim/S191"]
