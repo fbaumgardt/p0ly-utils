@@ -9,6 +9,7 @@ authors = [
 requires-python = ">=3.13"
 dependencies = [
     "mne>=1.12.1",
+    "mne-bids>=0.16",
     "mne-icalabel>=0.9.0",
     "numpy>=2.4.6",
     "onnxruntime>=1.26.0",
@@ -26,6 +27,7 @@ dev = [
     "mypy>=1.15.0",
     "pandas-stubs",
     "pre-commit>=4.0.0",
+    "pybv>=0.7",
     "pytest>=9.0.3",
     "pytest-cov>=7.1.0",
     "ruff>=0.15.14",
@@ -63,6 +65,7 @@ show_missing = true
 [tool.mypy]
 python_version = "3.13"
 files = [
+    "src/p0ly_utils/io.py",
     "src/p0ly_utils/metadata",
     "tests",
 ]

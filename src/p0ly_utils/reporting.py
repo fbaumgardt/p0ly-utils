@@ -6,7 +6,7 @@ Builds an MNE Report styled with a neo-brutalist, ultra-minimalist design.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -122,7 +122,6 @@ def _compute_ptp_zscore(epochs: mne.BaseEpochs, max_iter: int = 3) -> np.ndarray
     data = epochs.get_data()  # (n_epochs, n_channels, n_times)
     ptp = np.ptp(data, axis=-1)  # (n_epochs, n_channels)
     mean_ptp = np.mean(ptp, axis=0)  # (n_channels,)
-    std_ptp = np.std(ptp, axis=0)
     mask = np.zeros(mean_ptp.shape, dtype=bool)
     for _ in range(max_iter):
         masked = np.ma.masked_array(mean_ptp, mask)
