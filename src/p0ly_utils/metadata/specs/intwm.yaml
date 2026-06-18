@@ -1,0 +1,40 @@
+name: intwm
+timelocks:
+  cue:
+    cue/left: "Stim/S201"
+    cue/right: "Stim/S202"
+  resp:
+    resp/incorrect: "Stim/S250"
+    resp/correct: "Stim/S251"
+intervals:
+  cue: [-0.2, 1.0]
+  resp: [-1.0, 0.2]
+trial_codes_range: [81, 99]
+columns:
+  Correct:
+    type: int_sum
+    code_map:
+      "Stim/S251": 1
+      "Stim/S250": 0
+csv_columns:
+  Condition:
+    - condArray
+    - lookup_condition
+  Target:
+    - tarLoci
+    - lookup_target
+  OrientL:
+    - Ori_1
+    - identity
+  OrientR:
+    - Ori_2
+    - identity
+  OrientT:
+    - tarOri
+    - identity
+  ChgBegin:
+    - startTime4int
+    - identity
+  ChgRT:
+    - chgRT
+    - identity

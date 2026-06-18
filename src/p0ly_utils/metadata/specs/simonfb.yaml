@@ -1,0 +1,52 @@
+name: simonfb
+timelocks:
+  stim:
+    all: "Stim/S 12"
+  resp:
+    all: "Stim/S 30"
+    none: "Stim/S 39"
+  fdb:
+    all: "Stim/S 22"
+intervals:
+  stim: [-0.2, 1.0]
+  resp: [-1.0, 0.2]
+  fdb: [-0.2, 1.0]
+trial_codes:
+  - "Stim/S 17"
+block_codes:
+  - "Stim/S  7"
+columns:
+  Color:
+    type: code_lookup
+    code_map:
+      red: "Stim/S 16"
+      purple: "Stim/S 45"
+      blue: "Stim/S 46"
+      yellow: "Stim/S 19"
+  Side:
+    type: code_lookup
+    code_map:
+      left: "Stim/S 15"
+      right: "Stim/S 14"
+  Response:
+    type: code_lookup
+    code_map:
+      left: "Stim/S 37"
+      right: "Stim/S 38"
+  Correct:
+    type: bool_presence
+    code: "Stim/S 34"
+  Congruent:
+    type: derived
+    depends_on: ["Side", "Response", "Correct"]
+    fn: side_response_correct_congruent
+  Block:
+    type: derived
+    depends_on: ["Trial"]
+    fn: trial_block_index
+    with:
+      blocksize: 60
+rt_defs:
+  - name: RT
+    start: ["Stim/S 12"]
+    end: ["Stim/S 30"]

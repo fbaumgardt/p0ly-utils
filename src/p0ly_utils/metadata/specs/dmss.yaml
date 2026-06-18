@@ -1,0 +1,40 @@
+name: dmss
+timelocks:
+  stim:
+    size1: "Stim/S 11"
+    size2: "Stim/S 25"
+    size4: "Stim/S 43"
+  prob:
+    all: "Stim/S 57"
+  resp:
+    correct: "Stim/S 64"
+    incorrect: "Stim/S 65"
+  fdb:
+    size1: "Stim/S 72"
+    size2: "Stim/S 73"
+    size4: "Stim/S 74"
+intervals:
+  stim: [-0.2, 1.2]
+  prob: [-0.2, 1.2]
+  fdb: [-0.2, 1.0]
+  resp: [-1.2, 0.2]
+trial_codes:
+  - "Stim/S  5"
+block_codes:
+  - "Stim/S  3"
+columns:
+  Size:
+    type: int_sum
+    code_map:
+      "Stim/S 11": 1
+      "Stim/S 25": 2
+      "Stim/S 43": 4
+  Correct:
+    type: int_sum
+    code_map:
+      "Stim/S 64": 1
+rt_defs:
+  - name: RT
+    start: ["Stim/S 57"]
+    end: ["Stim/S 60"]
+    nan_if_negative: false
