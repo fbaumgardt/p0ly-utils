@@ -644,6 +644,20 @@ wheels = [
 ]
 
 [[package]]
+name = "mne-bids"
+version = "0.19.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "mne" },
+    { name = "numpy" },
+    { name = "scipy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e9/42/6ddd792c209070c67125a6fd2fb82024cfb4e9eeda507cd59f3cfb4e6a44/mne_bids-0.19.0.tar.gz", hash = "sha256:4166c3ad5afa81f4943d675cdc7e0b90efea6fb470373e667eb93579e18f2409", size = 151834, upload-time = "2026-05-26T18:15:41.493Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3f/1d/e2c940f8bd8ef0cb2d32d039bd2537ff96d31c17acb643b6f1480a73da8a/mne_bids-0.19.0-py3-none-any.whl", hash = "sha256:2ee6631115fef654e1d0f6c0fb52b99a4f808418c51b36c000ac46933b6e31d3", size = 189809, upload-time = "2026-05-26T18:15:39.835Z" },
+]
+
+[[package]]
 name = "mne-icalabel"
 version = "0.9.0"
 source = { registry = "https://pypi.org/simple" }
@@ -807,6 +821,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "mne" },
+    { name = "mne-bids" },
     { name = "mne-icalabel" },
     { name = "numpy" },
     { name = "onnxruntime" },
@@ -821,6 +836,7 @@ dev = [
     { name = "mypy" },
     { name = "pandas-stubs" },
     { name = "pre-commit" },
+    { name = "pybv" },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "ruff" },
@@ -829,6 +845,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "mne", specifier = ">=1.12.1" },
+    { name = "mne-bids", specifier = ">=0.16" },
     { name = "mne-icalabel", specifier = ">=0.9.0" },
     { name = "numpy", specifier = ">=2.4.6" },
     { name = "onnxruntime", specifier = ">=1.26.0" },
@@ -843,6 +860,7 @@ dev = [
     { name = "mypy", specifier = ">=1.15.0" },
     { name = "pandas-stubs" },
     { name = "pre-commit", specifier = ">=4.0.0" },
+    { name = "pybv", specifier = ">=0.7" },
     { name = "pytest", specifier = ">=9.0.3" },
     { name = "pytest-cov", specifier = ">=7.1.0" },
     { name = "ruff", specifier = ">=0.15.14" },
@@ -1069,6 +1087,18 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/04/78/0acd37ca84ce3ddffaa92ef0f571e073faa6d8ff1f0559ab1272188ea2be/psutil-7.2.2-cp36-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:b58fabe35e80b264a4e3bb23e6b96f9e45a3df7fb7eed419ac0e5947c61e47cc", size = 148266, upload-time = "2026-01-28T18:15:31.597Z" },
     { url = "https://files.pythonhosted.org/packages/b4/90/e2159492b5426be0c1fef7acba807a03511f97c5f86b3caeda6ad92351a7/psutil-7.2.2-cp37-abi3-win_amd64.whl", hash = "sha256:eb7e81434c8d223ec4a219b5fc1c47d0417b12be7ea866e24fb5ad6e84b3d988", size = 137737, upload-time = "2026-01-28T18:15:33.849Z" },
     { url = "https://files.pythonhosted.org/packages/8c/c7/7bb2e321574b10df20cbde462a94e2b71d05f9bbda251ef27d104668306a/psutil-7.2.2-cp37-abi3-win_arm64.whl", hash = "sha256:8c233660f575a5a89e6d4cb65d9f938126312bca76d8fe087b947b3a1aaac9ee", size = 134617, upload-time = "2026-01-28T18:15:36.514Z" },
+]
+
+[[package]]
+name = "pybv"
+version = "0.8.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/72/8b/1d6df7b4ee1d89735c2ce86922cfb1b642df9594e2fb58f8b3438768f6ab/pybv-0.8.1.tar.gz", hash = "sha256:31cd29612d8d35eda752b992e79da1db9d81bdf9e703743cd863ab2eeb446f22", size = 16287, upload-time = "2026-06-16T09:43:12.783Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f3/9b/ebd66809b5aa5ca0d5a9a25192c8fb68850bb4495b0514043a6641e790f6/pybv-0.8.1-py3-none-any.whl", hash = "sha256:950b864c0a53b4fc772624c04ba87632d4dd442c7504670674afedcf2c8d40e1", size = 16434, upload-time = "2026-06-16T09:43:11.428Z" },
 ]
 
 [[package]]

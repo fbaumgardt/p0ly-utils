@@ -20,3 +20,6 @@ htmlcov/
 
 # Data
 *.fif.gz
+
+# Docs
+scrum/

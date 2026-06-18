@@ -1,0 +1,505 @@
+/* ============================================================
+   NEO-BRUTALIST EEG REPORT STYLESHEET
+   ============================================================ */
+
+/* --- Font imports --- */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+/* --- Root variables --- */
+:root {
+  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'SF Mono', 'Cascadia Code', monospace;
+  --color-bg: #fafafa;
+  --color-fg: #0a0a0a;
+  --color-border: #000000;
+  --color-border-light: #d4d4d4;
+  --color-accent: #dc2626;
+  --color-accent-blue: #2563eb;
+  --color-muted: #525252;
+  --color-surface: #ffffff;
+  --border-thin: 1px solid var(--color-border-light);
+  --border-strong: 1.5px solid var(--color-border);
+}
+
+/* --- Global resets --- */
+body {
+  font-family: var(--font-body) !important;
+  background: var(--color-bg) !important;
+  color: var(--color-fg) !important;
+  -webkit-font-smoothing: antialiased;
+  letter-spacing: -0.011em;
+}
+
+/* Kill all shadows, gradients, rounded corners */
+*, *::before, *::after {
+  box-shadow: none !important;
+  text-shadow: none !important;
+}
+.bg-primary, .bg-light, .btn-primary, .badge {
+  background: transparent !important;
+}
+.rounded, .rounded-pill {
+  border-radius: 0 !important;
+}
+
+/* ============================================================
+   1. TOP HEADER — METADATA BAR
+   ============================================================ */
+nav.navbar {
+  background: var(--color-surface) !important;
+  border-bottom: var(--border-strong) !important;
+  padding: 0.5rem 1.25rem !important;
+  min-height: 3rem !important;
+}
+nav.navbar .container-fluid {
+  padding: 0 !important;
+}
+nav.navbar .navbar-brand {
+  font-family: var(--font-mono) !important;
+  font-size: 0.8125rem !important;
+  font-weight: 500 !important;
+  color: var(--color-fg) !important;
+  text-transform: none !important;
+  letter-spacing: 0.02em !important;
+}
+nav.navbar .navbar-brand img {
+  display: none !important;
+}
+nav.navbar .fs-3 {
+  font-family: var(--font-mono) !important;
+  font-size: 0.8125rem !important;
+  font-weight: 500 !important;
+}
+nav.navbar .btn-group {
+  font-family: var(--font-mono) !important;
+  font-size: 0.6875rem !important;
+}
+nav.navbar .btn {
+  font-family: var(--font-mono) !important;
+  font-size: 0.6875rem !important;
+  border: var(--border-thin) !important;
+  background: transparent !important;
+  color: var(--color-fg) !important;
+  padding: 0.2rem 0.6rem !important;
+  border-radius: 0 !important;
+}
+nav.navbar .dropdown-menu {
+  border: var(--border-strong) !important;
+  border-radius: 0 !important;
+  background: var(--color-surface) !important;
+  font-family: var(--font-mono) !important;
+  font-size: 0.6875rem !important;
+}
+nav.navbar .badge {
+  display: none !important;
+}
+nav.navbar .dropdown-item {
+  font-family: var(--font-mono) !important;
+  font-size: 0.6875rem !important;
+}
+
+/* ============================================================
+   2. SIDEBAR — TABLE OF CONTENTS
+   ============================================================ */
+#toc {
+  background: var(--color-bg) !important;
+  border-right: var(--border-strong) !important;
+  padding: 1rem 0.75rem !important;
+}
+#toc h5 {
+  font-family: var(--font-mono) !important;
+  font-size: 0.625rem !important;
+  font-weight: 700 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.08em !important;
+  color: var(--color-muted) !important;
+  margin-bottom: 0.75rem !important;
+  padding: 0 !important;
+}
+#toc-navbar {
+  gap: 0 !important;
+}
+#toc-navbar .nav-link {
+  font-family: var(--font-mono) !important;
+  font-size: 0.6875rem !important;
+  font-weight: 400 !important;
+  color: var(--color-fg) !important;
+  padding: 0.25rem 0.5rem !important;
+  border-left: 2px solid transparent !important;
+  border-radius: 0 !important;
+  transition: none !important;
+}
+#toc-navbar .nav-link:hover {
+  background: transparent !important;
+  border-left-color: var(--color-border) !important;
+}
+#toc-navbar .nav-link.active {
+  font-weight: 700 !important;
+  background: transparent !important;
+  border-left-color: var(--color-border) !important;
+}
+
+/* ============================================================
+   3. MAIN CONTENT AREA
+   ============================================================ */
+#content.accordion {
+  padding: 1.5rem 2rem !important;
+  background: var(--color-bg) !important;
+}
+
+/* --- Section wrapper --- */
+#content > .accordion-item.section {
+  border: none !important;
+  border-bottom: var(--border-strong) !important;
+  margin-bottom: 1.5rem !important;
+  padding-bottom: 1.5rem !important;
+  background: transparent !important;
+}
+#content > .accordion-item.section:last-child {
+  border-bottom: none !important;
+}
+
+/* --- Section header --- */
+#content .accordion-header .accordion-button {
+  font-family: var(--font-body) !important;
+  font-size: 1.125rem !important;
+  font-weight: 700 !important;
+  color: var(--color-fg) !important;
+  background: transparent !important;
+  border: none !important;
+  padding: 0.25rem 0 !important;
+  letter-spacing: -0.015em !important;
+}
+#content .accordion-header .accordion-button::after {
+  display: none !important;
+}
+#content .accordion-header .accordion-button:not(.collapsed) {
+  background: transparent !important;
+  color: var(--color-fg) !important;
+}
+#content .accordion-header .accordion-button .badge {
+  font-family: var(--font-mono) !important;
+  font-size: 0.5625rem !important;
+  font-weight: 700 !important;
+  color: var(--color-muted) !important;
+  background: transparent !important;
+  border: var(--border-thin) !important;
+  padding: 0.1rem 0.35rem !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+}
+
+/* --- Section body --- */
+#content .accordion-collapse {
+  border: none !important;
+}
+#content .accordion-body {
+  padding: 0.75rem 0 !important;
+  background: transparent !important;
+}
+
+/* --- Inner content blocks --- */
+#content .accordion-item.raw,
+#content .accordion-item.ica,
+#content .accordion-item.custom-html,
+#content .accordion-item.custom-image {
+  border: none !important;
+  border-top: var(--border-thin) !important;
+  margin: 0 !important;
+  padding: 0.75rem 0 !important;
+  background: transparent !important;
+}
+#content .accordion-item:first-of-type {
+  border-top: none !important;
+}
+
+/* --- Inner block headers --- */
+#content .accordion-item .accordion-header .accordion-button {
+  font-family: var(--font-mono) !important;
+  font-size: 0.6875rem !important;
+  font-weight: 500 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+  padding: 0.125rem 0 !important;
+  color: var(--color-muted) !important;
+}
+#content .accordion-item .accordion-header .accordion-button .badge {
+  display: none !important;
+}
+
+/* --- Inner block body --- */
+#content .accordion-item .accordion-body {
+  padding: 0.5rem 0 !important;
+}
+
+/* ============================================================
+   4. FIGURES & CAPTIONS
+   ============================================================ */
+.figure {
+  margin: 0.75rem 0 0.5rem 0 !important;
+  border: var(--border-thin) !important;
+  background: var(--color-surface) !important;
+}
+.figure-img {
+  margin: 0 !important;
+  border-radius: 0 !important;
+}
+.figure-caption {
+  font-family: var(--font-mono) !important;
+  font-size: 0.625rem !important;
+  font-weight: 500 !important;
+  color: var(--color-muted) !important;
+  text-align: left !important;
+  padding: 0.3rem 0.5rem !important;
+  border-top: var(--border-thin) !important;
+  background: var(--color-bg) !important;
+  letter-spacing: 0.03em !important;
+}
+
+/* ============================================================
+   5. TABLES — CHANNEL MATRIX / DATA GRID
+   ============================================================ */
+#content table,
+#content .table,
+#content .mne-repr-table {
+  font-family: var(--font-mono) !important;
+  font-size: 0.6875rem !important;
+  border-collapse: collapse !important;
+  width: 100% !important;
+  margin: 0.25rem 0 !important;
+  background: var(--color-surface) !important;
+  border: var(--border-thin) !important;
+}
+#content table thead th {
+  font-weight: 700 !important;
+  font-size: 0.5625rem !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.06em !important;
+  color: var(--color-muted) !important;
+  border-bottom: var(--border-strong) !important;
+  border-top: none !important;
+  padding: 0.35rem 0.5rem !important;
+  background: transparent !important;
+  white-space: nowrap !important;
+}
+#content table td {
+  padding: 0.25rem 0.5rem !important;
+  border-bottom: var(--border-thin) !important;
+  border-top: none !important;
+  background: transparent !important;
+  font-variant-numeric: tabular-nums !important;
+}
+#content table tbody tr:hover td {
+  background: rgba(0,0,0,0.02) !important;
+}
+#content .fixed-table-container {
+  border: none !important;
+}
+#content .fixed-table-header {
+  border-bottom: var(--border-strong) !important;
+}
+
+/* --- MNE repr table overrides --- */
+.mne-repr-table {
+  border: var(--border-thin) !important;
+}
+.mne-repr-section-header {
+  cursor: default !important;
+}
+.mne-repr-section-toggle button {
+  display: none !important;
+}
+
+/* ============================================================
+   6. CODE BLOCKS & LOGS
+   ============================================================ */
+pre, code, .language-shell, .language-python {
+  font-family: var(--font-mono) !important;
+  font-size: 0.6875rem !important;
+  line-height: 1.45 !important;
+  background: var(--color-bg) !important;
+  border: var(--border-thin) !important;
+  padding: 0.5rem 0.75rem !important;
+  border-radius: 0 !important;
+}
+pre code {
+  border: none !important;
+  padding: 0 !important;
+}
+.hljs {
+  background: var(--color-bg) !important;
+  color: var(--color-fg) !important;
+}
+
+/* ============================================================
+   7. CAROUSEL
+   ============================================================ */
+.carousel {
+  border: var(--border-thin) !important;
+}
+.carousel-control-prev-icon,
+.carousel-control-next-icon {
+  filter: invert(1) !important;
+}
+.carousel-indicators button {
+  background-color: var(--color-border) !important;
+}
+
+/* ============================================================
+   8. HERO SECTION
+   ============================================================ */
+.hero-status {
+  font-family: var(--font-body) !important;
+  font-size: 1.75rem !important;
+  font-weight: 700 !important;
+  color: var(--color-fg) !important;
+  letter-spacing: -0.025em !important;
+  line-height: 1.1 !important;
+  margin: 0 0 0.25rem 0 !important;
+}
+.hero-meta {
+  font-family: var(--font-mono) !important;
+  font-size: 0.6875rem !important;
+  color: var(--color-muted) !important;
+  margin: 0 0 1rem 0 !important;
+}
+.hero-desc {
+  font-family: var(--font-body) !important;
+  font-size: 0.875rem !important;
+  color: var(--color-muted) !important;
+  line-height: 1.4 !important;
+  max-width: 42rem !important;
+  margin: 0 0 1.25rem 0 !important;
+}
+.status-ready { color: var(--color-fg); }
+.status-warn { color: var(--color-accent); }
+
+/* ============================================================
+   9. METADATA SELECTOR TABS
+   ============================================================ */
+.meta-tabs {
+  display: flex !important;
+  gap: 0 !important;
+  border-bottom: var(--border-strong) !important;
+  margin: 0 0 0.75rem 0 !important;
+}
+.meta-tab {
+  font-family: var(--font-mono) !important;
+  font-size: 0.6875rem !important;
+  font-weight: 500 !important;
+  padding: 0.35rem 0.75rem !important;
+  background: transparent !important;
+  border: none !important;
+  border-bottom: 2px solid transparent !important;
+  color: var(--color-muted) !important;
+  cursor: pointer !important;
+  transition: none !important;
+  border-radius: 0 !important;
+}
+.meta-tab.active,
+.meta-tab:hover {
+  color: var(--color-fg) !important;
+  border-bottom-color: var(--color-border) !important;
+}
+
+/* Meta data panel */
+.meta-panel {
+  font-family: var(--font-mono) !important;
+  font-size: 0.6875rem !important;
+  line-height: 1.5 !important;
+  padding: 0.5rem 0 !important;
+  border: var(--border-thin) !important;
+  background: var(--color-surface) !important;
+  max-height: 16rem !important;
+  overflow-y: auto !important;
+}
+.meta-panel .meta-row {
+  display: flex !important;
+  padding: 0.15rem 0.5rem !important;
+}
+.meta-panel .meta-key {
+  font-weight: 700 !important;
+  min-width: 12rem !important;
+  color: var(--color-muted) !important;
+}
+
+/* ============================================================
+   10. WARNINGS / ALERTS
+   ============================================================ */
+.quality-warning {
+  font-family: var(--font-mono) !important;
+  font-size: 0.6875rem !important;
+  color: var(--color-accent) !important;
+  border-left: 2px solid var(--color-accent) !important;
+  padding: 0.25rem 0.5rem !important;
+  margin: 0.15rem 0 !important;
+}
+.quality-ok {
+  font-family: var(--font-mono) !important;
+  font-size: 0.6875rem !important;
+  color: var(--color-muted) !important;
+  border-left: 2px solid var(--color-border-light) !important;
+  padding: 0.25rem 0.5rem !important;
+  margin: 0.15rem 0 !important;
+}
+
+/* ============================================================
+   11. PIPELINE STAGE SPLIT-VIEW SECTIONS
+   ============================================================ */
+.pipeline-stage {
+  display: flex !important;
+  gap: 2rem !important;
+  margin: 1rem 0 !important;
+  border-top: var(--border-strong) !important;
+  padding-top: 1rem !important;
+}
+.pipeline-left {
+  flex: 0 0 18rem !important;
+}
+.pipeline-right {
+  flex: 1 !important;
+  min-width: 0 !important;
+}
+.pipeline-title {
+  font-family: var(--font-body) !important;
+  font-size: 1rem !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.015em !important;
+  margin: 0 0 0.25rem 0 !important;
+}
+.pipeline-summary {
+  font-family: var(--font-body) !important;
+  font-size: 0.8125rem !important;
+  color: var(--color-muted) !important;
+  line-height: 1.35 !important;
+  margin: 0 0 0.5rem 0 !important;
+}
+.pipeline-log-link {
+  font-family: var(--font-mono) !important;
+  font-size: 0.625rem !important;
+  color: var(--color-muted) !important;
+  text-decoration: none !important;
+  border-bottom: 1px dotted var(--color-border-light) !important;
+}
+
+/* ============================================================
+   12. MISC OVERRIDES
+   ============================================================ */
+.modal-backdrop { display: none !important; }
+.carousel-item { transition: none !important; }
+.dropdown-menu { padding: 0.25rem 0 !important; }
+
+/* Monospace figure captions injected by MNE's add_figure */
+figure .caption,
+figure figcaption {
+  font-family: var(--font-mono) !important;
+  font-size: 0.625rem !important;
+  letter-spacing: 0.03em !important;
+}
+
+/* ---- Print stylesheet ---- */
+@media print {
+  body { background: #fff !important; }
+  #toc { display: none !important; }
+  #content { margin-left: 0 !important; }
+}
