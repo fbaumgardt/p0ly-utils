@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import mne
 import numpy as np
 import pandas as pd
-import mne
 
 
 def _match_onsets(
