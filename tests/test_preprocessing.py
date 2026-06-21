@@ -248,6 +248,7 @@ class TestArtefactRejection:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.slow
 class TestIcaCleanDnn:
     @pytest.fixture
     def long_raw(self):
@@ -321,6 +322,7 @@ class TestIcaCleanDnn:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.slow
 class TestIcaCleanRegression:
     @pytest.fixture
     def raw_with_eog(self):
@@ -355,6 +357,7 @@ class TestIcaCleanRegression:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.slow
 class TestPreprocessRaw:
     """End-to-end chain: filter -> bad-channels -> ICA -> sliding-window reject.
 
@@ -529,6 +532,7 @@ class TestPreprocessRawOptional:
         assert isinstance(cleaned, mne.io.BaseRaw)
         assert ica is None
 
+    @pytest.mark.slow
     def test_ica_strategy_set_returns_ica_object(self, raw):
         # ICA enabled -> a fitted ICA object is returned (reportable).
         _, _, ica = preprocess_raw(

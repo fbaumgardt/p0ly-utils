@@ -102,8 +102,9 @@ See [ADR-002](../scrum/04_Specs/ADR-002_declarative-metadata-specs.md).
 
 ## 8. Testing Conventions
 
-- Run `uv run pytest` before considering any change complete
-- Run ICA-related tests only after changes to `preprocessing.py` (they are slow)
+- **Fast loop:** `uv run pytest` before considering any change complete. Slow ICA-fit tests are marked `@pytest.mark.slow` and skipped by default (`addopts = "-ra -m 'not slow'"` in `pyproject.toml`); the loop runs in seconds.
+- **Full gate (DoD / pre-merge):** `uv run pytest -m ""` runs the slow ICA suite too (~10–15 min). `uv run pytest -m slow` runs only the slow tests in isolation.
+- **Mark slow tests:** any test that fits an ICA decomposition (calls `ica_clean_*`, `preprocess_raw` with `ica_strategy` set, or `label_components`) must be decorated `@pytest.mark.slow` so the default loop stays fast. Prefer class-level markers when a whole class is ICA-bound.
 - `tests/data/` contains real-world fixtures — use them for valid tests
 - New analysis functions require unit tests with simulated MNE data or synthetic sinusoids
 
