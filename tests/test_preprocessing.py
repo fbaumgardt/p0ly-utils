@@ -6,6 +6,8 @@ from pathlib import Path
 import mne
 import numpy as np
 import pytest
+from mne.preprocessing import ICA
+from mne_icalabel import label_components
 
 from p0ly_utils.preprocessing import (
     _minmax_zscore,
@@ -13,6 +15,8 @@ from p0ly_utils.preprocessing import (
     fix_channels,
     ica_clean_dnn,
     ica_clean_regression,
+    interpolate_bads,
+    preprocess_raw,
 )
 
 _CH_NAMES = json.loads((Path(__file__).parent / "data" / "ch_names.json").read_text())
@@ -161,6 +165,38 @@ class TestFixChannels:
 
 
 # ---------------------------------------------------------------------------
+# interpolate_bads
+# ---------------------------------------------------------------------------
+
+
+class TestInterpolateBads:
+    def test_interpolates_flagged_channels(self):
+        raw = _make_raw_with_spike(channel=3, sample=100)
+        flagged = fix_channels(raw, threshold=DETECTION_THRESHOLD)
+        assert flagged.info["bads"] != []
+        interp = interpolate_bads(flagged)
+        assert interp.info["bads"] == []
+
+    def test_does_not_mutate_input(self):
+        raw = _make_raw_with_spike(channel=3, sample=100)
+        flagged = fix_channels(raw, threshold=DETECTION_THRESHOLD)
+        bads_before = list(flagged.info["bads"])
+        _ = interpolate_bads(flagged)
+        assert flagged.info["bads"] == bads_before
+
+    def test_reset_bads_false_keeps_bads(self):
+        raw = _make_raw_with_spike(channel=3, sample=100)
+        flagged = fix_channels(raw, threshold=DETECTION_THRESHOLD)
+        interp = interpolate_bads(flagged, reset_bads=False)
+        assert interp.info["bads"] != []
+
+    def test_no_bads_is_noop(self):
+        raw = _make_raw(n_channels=10)
+        interp = interpolate_bads(raw)
+        assert interp.info["bads"] == []
+
+
+# ---------------------------------------------------------------------------
 # artefact_rejection
 # ---------------------------------------------------------------------------
 
@@ -244,6 +280,41 @@ class TestIcaCleanDnn:
         _, ica = ica_clean_dnn(long_raw, exclude_components=[])
         assert ica.exclude == []
 
+    def test_threshold_excludes_subset_of_label_matches(self, long_raw):
+        # First establish the label-only exclusions and their probabilities.
+        r_ic = long_raw.copy().filter(1.0, 100.0)
+        ica_ref = ICA(
+            n_components=None,
+            method="infomax",
+            fit_params=dict(extended=True),
+            random_state=97,
+            max_iter="auto",
+        )
+        ica_ref.fit(r_ic)
+        labels = label_components(r_ic, ica_ref, method="iclabel")
+        non_brain = ["eye blink", "muscle artifact"]
+        matching = [
+            (i, float(labels["y_pred_proba"][i]))
+            for i, lab in enumerate(labels["labels"])
+            if lab in non_brain
+        ]
+        if not matching:
+            pytest.skip("No non-brain components in fixture; threshold path untestable.")
+        # A threshold just above the max matching probability excludes nothing.
+        max_p = max(p for _, p in matching)
+        _, ica_high = ica_clean_dnn(
+            long_raw, threshold=max_p + 1e-6
+        )
+        assert ica_high.exclude == []
+        # A threshold of 0.0 excludes every label match (== label-only behaviour).
+        _, ica_zero = ica_clean_dnn(long_raw, threshold=0.0)
+        assert ica_zero.exclude == [i for i, _ in matching]
+
+    def test_threshold_none_matches_label_only(self, long_raw):
+        _, ica_none = ica_clean_dnn(long_raw, threshold=None)
+        _, ica_label = ica_clean_dnn(long_raw)
+        assert ica_none.exclude == ica_label.exclude
+
 
 # ---------------------------------------------------------------------------
 # ica_clean_regression
@@ -277,3 +348,223 @@ class TestIcaCleanRegression:
     def test_tmin_tmax_restricts_fit(self, raw_with_eog):
         _, ica = ica_clean_regression(raw_with_eog, components=10, tmin=5.0, tmax=50.0)
         assert ica.n_iter_ is not None
+
+
+# ---------------------------------------------------------------------------
+# preprocess_raw (integration of the full chain)
+# ---------------------------------------------------------------------------
+
+
+class TestPreprocessRaw:
+    """End-to-end chain: filter -> bad-channels -> ICA -> sliding-window reject.
+
+    Exercises the same path the pipeline ``preprocess`` rule calls, so the
+    chain is unit-tested here instead of only via a slow ``snakemake`` run.
+    """
+
+    @pytest.fixture
+    def raw(self):
+        # 20 channels / 20 s referenced to a common average so ICLabel does not
+        # warn about CAR; montage applied (mirrors US-007 ingestion contract).
+        return (
+            _make_raw(n_channels=20, duration=20.0, sfreq=256.0)
+            .set_eeg_reference(verbose=False)
+        )
+
+    def _cfg(self, **overrides):
+        cfg = dict(
+            l_freq=1.0,
+            h_freq=45.0,
+            bad_channel_z_thresh=2.5,
+            ica_strategy="mne-icalabel",
+            icalabel_threshold=0.75,
+            epoch_window_ms=500,
+            epoch_reject_z_thresh=3.0,
+        )
+        cfg.update(overrides)
+        return cfg
+
+    def test_returns_cleaned_raw_bad_channels_and_ica(self, raw):
+        cleaned, bad_channels, ica = preprocess_raw(raw, **self._cfg())
+        assert isinstance(cleaned, mne.io.BaseRaw)
+        assert isinstance(bad_channels, list)
+        assert isinstance(ica, mne.preprocessing.ICA)
+        # interpolation clears bads on the cleaned raw
+        assert cleaned.info["bads"] == []
+
+    def test_ica_object_carries_exclude_list(self, raw):
+        _, _, ica = preprocess_raw(raw, **self._cfg())
+        assert isinstance(ica.exclude, list)
+        # exclude indices are within the fitted component count
+        assert all(0 <= i < ica.n_components_ for i in ica.exclude)
+
+    def test_does_not_mutate_input(self, raw):
+        orig = raw.get_data().copy()
+        _ = preprocess_raw(raw, **self._cfg())
+        np.testing.assert_array_equal(raw.get_data(), orig)
+
+    def test_requires_montage(self):
+        raw = _make_raw(n_channels=20, duration=20.0, sfreq=256.0)
+        raw.set_eeg_reference(verbose=False)
+        # strip montage to assert the precondition guard
+        raw = raw.copy().set_montage(None)
+        with pytest.raises(RuntimeError, match="Montage missing"):
+            preprocess_raw(raw, **self._cfg())
+
+    def test_unknown_ica_strategy_raises(self, raw):
+        with pytest.raises(ValueError, match="Unknown ica_strategy"):
+            preprocess_raw(raw, **self._cfg(ica_strategy="bogus"))
+
+    def test_find_bads_eog_strategy_runs(self):
+        # The regression strategy needs EOG channels; reuse the EOG helper.
+        raw = _make_raw_with_eog(n_eeg=20, duration=20.0, sfreq=256.0)
+        raw = raw.set_eeg_reference(verbose=False).set_montage(
+            "easycap-M1", on_missing="ignore"
+        )
+        cleaned, bad_channels, ica = preprocess_raw(
+            raw, **self._cfg(ica_strategy="find_bads_eog")
+        )
+        assert isinstance(cleaned, mne.io.BaseRaw)
+        assert isinstance(bad_channels, list)
+        assert isinstance(ica, mne.preprocessing.ICA)
+
+    def test_persists_bad_interval_annotations(self, raw):
+        # Inject a moderate-amplitude transient to trigger sliding-window
+        # rejection without destabilising the ICA fit (a huge spike raises
+        # infomax ``log(n_features**2)`` to a ZeroDivisionError).
+        data = raw.get_data()
+        data[:, 4000:4050] += 1e-3  # ~1 mV step across all channels
+        raw._data[:] = data
+        cleaned, _, _ = preprocess_raw(raw, **self._cfg(epoch_reject_z_thresh=2.5))
+        descs = list(cleaned.annotations.description)
+        assert "bad_minmax_zscore" in descs
+
+    def test_clean_recording_has_no_bad_annotations(self, raw):
+        cleaned, _, _ = preprocess_raw(raw, **self._cfg())
+        assert all(d != "bad_minmax_zscore" for d in cleaned.annotations.description)
+
+
+# ---------------------------------------------------------------------------
+# preprocess_raw — optional steps (each parameter None skips its step)
+# ---------------------------------------------------------------------------
+
+
+class TestPreprocessRawOptional:
+    """Every step is optional; a None parameter skips its step."""
+
+    @pytest.fixture
+    def raw(self):
+        return (
+            _make_raw(n_channels=20, duration=20.0, sfreq=256.0)
+            .set_eeg_reference(verbose=False)
+        )
+
+    def test_all_none_returns_raw_with_no_steps_applied(self, raw):
+        cleaned, bad_channels, ica = preprocess_raw(raw)
+        assert isinstance(cleaned, mne.io.BaseRaw)
+        assert bad_channels == []
+        assert ica is None
+        # no step ran: data identical, no bad-interval annotations
+        np.testing.assert_array_equal(cleaned.get_data(), raw.get_data())
+        assert all(d != "bad_minmax_zscore" for d in cleaned.annotations.description)
+
+    def test_all_none_does_not_mutate_input(self, raw):
+        orig = raw.get_data().copy()
+        _ = preprocess_raw(raw)
+        np.testing.assert_array_equal(raw.get_data(), orig)
+
+    def test_all_none_still_requires_montage(self):
+        raw = _make_raw(n_channels=20, duration=20.0, sfreq=256.0)
+        raw.set_eeg_reference(verbose=False)
+        raw = raw.copy().set_montage(None)
+        with pytest.raises(RuntimeError, match="Montage missing"):
+            preprocess_raw(raw)  # no kwargs -> all steps skipped, guard still fires
+
+    def test_filter_only_runs_without_other_steps(self, raw):
+        cleaned, bad_channels, ica = preprocess_raw(raw, l_freq=1.0, h_freq=45.0)
+        assert bad_channels == []
+        assert ica is None
+        # filter ran: data differs from input
+        assert not np.array_equal(cleaned.get_data(), raw.get_data())
+        assert all(d != "bad_minmax_zscore" for d in cleaned.annotations.description)
+
+    def test_filter_one_sided_lowpass_only(self, raw):
+        # l_freq=None, h_freq set -> lowpass-only; must run without error (S1).
+        cleaned, _, _ = preprocess_raw(raw, l_freq=None, h_freq=20.0)
+        assert isinstance(cleaned, mne.io.BaseRaw)
+        assert not np.array_equal(cleaned.get_data(), raw.get_data())
+
+    def test_filter_both_none_skips_filter(self, raw):
+        cleaned, _, _ = preprocess_raw(raw, l_freq=None, h_freq=None)
+        np.testing.assert_array_equal(cleaned.get_data(), raw.get_data())
+
+    def test_bad_channels_only_flags_and_interpolates(self):
+        # Outlier channel -> flagged + interpolated; no filter/ICA/annotations.
+        raw = _make_raw_with_spike(channel=3, sample=100, n_channels=20, duration=20.0)
+        raw = raw.set_eeg_reference(verbose=False)
+        cleaned, bad_channels, ica = preprocess_raw(raw, bad_channel_z_thresh=2.5)
+        assert len(bad_channels) >= 1
+        assert ica is None
+        assert cleaned.info["bads"] == []  # interpolated -> cleared
+        assert all(d != "bad_minmax_zscore" for d in cleaned.annotations.description)
+
+    def test_bad_channel_z_thresh_none_skips_bad_channels(self, raw):
+        cleaned, bad_channels, ica = preprocess_raw(
+            raw, l_freq=None, h_freq=None, bad_channel_z_thresh=None
+        )
+        assert bad_channels == []
+        assert ica is None
+        np.testing.assert_array_equal(cleaned.get_data(), raw.get_data())
+
+    def test_ica_strategy_none_skips_ica_returns_none(self, raw, caplog):
+        # With ICA skipped the run should be fast, emit no 'Fitting ICA' log,
+        # and return None for the ICA object.
+        import logging
+
+        with caplog.at_level(logging.INFO):
+            cleaned, _, ica = preprocess_raw(
+                raw, l_freq=None, h_freq=None, ica_strategy=None
+            )
+        assert not any("Fitting ICA" in rec.message for rec in caplog.records)
+        assert isinstance(cleaned, mne.io.BaseRaw)
+        assert ica is None
+
+    def test_ica_strategy_set_returns_ica_object(self, raw):
+        # ICA enabled -> a fitted ICA object is returned (reportable).
+        _, _, ica = preprocess_raw(
+            raw, l_freq=None, h_freq=None, ica_strategy="mne-icalabel", icalabel_threshold=0.75
+        )
+        assert isinstance(ica, mne.preprocessing.ICA)
+        assert ica.n_components_ is not None
+
+    def test_icalabel_threshold_ignored_when_ica_skipped(self, raw):
+        # threshold is inert when ica_strategy is None; no error raised.
+        cleaned, _, ica = preprocess_raw(
+            raw, l_freq=None, h_freq=None, ica_strategy=None, icalabel_threshold=0.9
+        )
+        assert isinstance(cleaned, mne.io.BaseRaw)
+        assert ica is None
+
+    def test_unknown_ica_strategy_still_raises(self, raw):
+        # None skips ICA; an unrecognised string is still an error (S2).
+        with pytest.raises(ValueError, match="Unknown ica_strategy"):
+            preprocess_raw(raw, l_freq=None, h_freq=None, ica_strategy="bogus")
+
+    def test_sliding_window_partial_skips_step(self, raw):
+        # epoch_window_ms set but epoch_reject_z_thresh=None -> step skipped,
+        # no bad_minmax_zscore annotations added (S4 + both-required rule).
+        cleaned, _, _ = preprocess_raw(
+            raw, l_freq=None, h_freq=None, epoch_window_ms=500, epoch_reject_z_thresh=None
+        )
+        assert all(d != "bad_minmax_zscore" for d in cleaned.annotations.description)
+
+    def test_sliding_window_both_set_runs_step(self, raw):
+        # Inject a transient so the step has something to flag.
+        data = raw.get_data()
+        data[:, 4000:4050] += 1e-3
+        raw._data[:] = data
+        cleaned, _, _ = preprocess_raw(
+            raw, l_freq=None, h_freq=None, epoch_window_ms=500, epoch_reject_z_thresh=2.5
+        )
+        descs = list(cleaned.annotations.description)
+        assert "bad_minmax_zscore" in descs
