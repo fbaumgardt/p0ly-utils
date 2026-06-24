@@ -65,10 +65,10 @@ def compute_epochs(
     ids = {k.replace("Stimulus", "Stim"): v for k, v in ids.items()}
 
     # Build a DataFrame for the metadata parser.  Annotations.onset is in
-    # seconds; convert to ms so the ``Onset`` column produced by the parser
-    # matches the unit expected by align_epochs_metadata (milliseconds).
+    # seconds; ``align_epochs_metadata`` matches on the ``Onset`` column in
+    # seconds (SCHEMA §2).
     annot_df: pd.DataFrame = pd.DataFrame({
-        "onset": r.annotations.onset * 1000,
+        "onset": r.annotations.onset,
         "description": r.annotations.description,
     })
 
