@@ -19,6 +19,32 @@ def _minmax_zscore(
     epoch (axis='time'), then outliers (|z| > threshold) are identified
     iteratively. At each step the mean and std are re-estimated on the unmasked
     subset, so earlier outliers don't inflate the baseline.
+
+    Parameters
+    ----------
+    inst
+        MNE object to score. When ``axis='channels'``, ``inst.get_data()``
+        has shape ``(n_channels, n_times)`` (a ``Raw``). When ``axis='time'``,
+        ``inst.get_data()`` has shape ``(n_epochs, n_channels, n_times)``
+        (an ``Epochs`` object) — the data is averaged over channels first so
+        that the score reflects per-epoch amplitude.
+    axis
+        ``'channels'`` to flag outlier channels (per-channel peak-to-peak),
+        ``'time'`` to flag outlier epochs (per-epoch peak-to-peak).
+    threshold
+        Z-score cutoff; samples with ``|z| >= threshold`` are flagged.
+    max_iter
+        Number of iterative refinement passes (re-estimate mean/std on the
+        unmasked subset each pass).
+    mask
+        Optional pre-existing boolean mask of shape ``(n_channels,)`` or
+        ``(n_epochs,)``; masked entries are excluded from the baseline.
+
+    Returns
+    -------
+    np.ndarray
+        Boolean mask of shape ``(n_channels,)`` when ``axis='channels'`` or
+        ``(n_epochs,)`` when ``axis='time'``. ``True`` marks an outlier.
     """
     data = inst.get_data()
     if axis == "time":
@@ -45,6 +71,22 @@ def fix_channels(
     and appends them to ``info["bads"]``. Interpolation is **not** performed
     here — call :func:`interpolate_bads` afterwards to reconstruct the dropped
     channels with MNE's spherical-spline interpolator.
+
+    Parameters
+    ----------
+    raw
+        Continuous raw recording. ``raw.get_data()`` has shape
+        ``(n_channels, n_times)`` (see SCHEMA §1).
+    threshold
+        Z-score cutoff for peak-to-peak distance.
+    max_iter
+        Number of iterative refinement passes in :func:`_minmax_zscore`.
+
+    Returns
+    -------
+    mne.io.BaseRaw
+        Copy of ``raw`` with ``info["bads"]`` updated. Data shape is
+        unchanged: ``(n_channels, n_times)``.
     """
     r = raw.copy()
     bad_mask = _minmax_zscore(r, threshold=threshold, max_iter=max_iter)
@@ -65,6 +107,20 @@ def interpolate_bads(
     interpolated channels are cleared from ``info["bads"]`` so downstream
     steps (ICA, sliding-window rejection) see a full, clean sensor array.
     The input raw is never mutated.
+
+    Parameters
+    ----------
+    raw
+        Continuous raw recording with ``info["bads"]`` populated.
+        ``raw.get_data()`` has shape ``(n_channels, n_times)`` (see SCHEMA §1).
+    reset_bads
+        If ``True``, clear interpolated channels from ``info["bads"]``.
+
+    Returns
+    -------
+    mne.io.BaseRaw
+        Copy of ``raw`` with bad channels interpolated. Data shape is
+        unchanged: ``(n_channels, n_times)``.
     """
     r = raw.copy()
     r.interpolate_bads(reset_bads=reset_bads)
@@ -86,6 +142,29 @@ def artefact_rejection(
     stimulation: optional (start, end) window in seconds to exclude from the
     z-score baseline (e.g. a stimulation artefact window). None endpoints mean
     the beginning / end of the recording. Pass None to skip masking entirely.
+
+    Parameters
+    ----------
+    raw
+        Continuous raw recording. ``raw.get_data()`` has shape
+        ``(n_channels, n_times)`` (see SCHEMA §1).
+    threshold
+        Z-score cutoff for peak-to-peak distance per epoch.
+    max_iter
+        Number of iterative refinement passes in :func:`_minmax_zscore`.
+    duration
+        Fixed-length epoch size in seconds used to segment the raw.
+    stimulation
+        Optional ``(start, end)`` window in seconds to exclude from the
+        z-score baseline. ``None`` endpoints mean beginning / end of recording.
+        Pass ``None`` to skip masking entirely.
+
+    Returns
+    -------
+    mne.Annotations
+        Annotations for each bad segment. ``onset``, ``duration``, and
+        ``description`` arrays each have shape ``(n_annotations,)``. The label
+        is ``'bad_minmax_zscore'`` for every annotation.
     """
     epo = mne.make_fixed_length_epochs(raw, duration=duration, reject_by_annotation=False)
 
@@ -129,6 +208,32 @@ def ica_clean_dnn(
 
     The input raw is never mutated; a cleaned copy is returned together with the
     fitted ICA object for inspection.
+
+    Parameters
+    ----------
+    raw
+        Continuous raw recording. ``raw.get_data()`` has shape
+        ``(n_channels, n_times)`` (see SCHEMA §1).
+    exclude_components
+        ICLabel label names to exclude (e.g. ``'eye blink'``, ``'muscle artifact'``).
+    threshold
+        ICLabel predicted-class probability cutoff. ``None`` keeps label-only
+        behaviour.
+    bandpass
+        ``(l_freq, h_freq)`` applied to the copy used for ICA fitting.
+    duration
+        Controls the fitting window: ``None`` for full recording,
+        ``(tmin, tmax)`` for explicit crop, ``float`` for centred window.
+    n_jobs
+        Number of parallel jobs for filtering.
+
+    Returns
+    -------
+    cleaned : mne.io.BaseRaw
+        Copy of ``raw`` with artefact components removed. Data shape is
+        unchanged: ``(n_channels, n_times)``.
+    ica : mne.preprocessing.ICA
+        Fitted ICA object with ``.exclude`` populated.
     """
 
     r_ic = raw.copy().filter(*bandpass, n_jobs=n_jobs)
@@ -183,6 +288,31 @@ def ica_clean_regression(
     EOG channels are detected automatically from raw.info. The search window
     for find_bads_eog is capped at 1000 s from tmin to keep it tractable on
     long recordings. The input raw is never mutated.
+
+    Parameters
+    ----------
+    raw
+        Continuous raw recording with EEG + EOG channels.
+        ``raw.get_data()`` has shape ``(n_channels, n_times)`` where
+        ``n_channels`` includes both EEG and EOG channels (see SCHEMA §1).
+    bandpass
+        ``(l_freq, h_freq)`` applied to the copy used for ICA fitting.
+    decim
+        Decimation factor for ICA fitting.
+    components
+        Number of ICA components to compute.
+    tmin
+        Start time (s) of the fitting window.
+    tmax
+        End time (s) of the fitting window. ``None`` uses the recording end.
+
+    Returns
+    -------
+    cleaned : mne.io.BaseRaw
+        Copy of ``raw`` with EOG artefact components removed. Data shape is
+        unchanged: ``(n_channels, n_times)``.
+    ica : mne.preprocessing.ICA
+        Fitted ICA object with ``.exclude`` populated.
     """
     r_ic = raw.copy().crop(tmin=tmin, tmax=tmax).filter(*bandpass)
     ica = ICA(n_components=components).fit(r_ic, decim=decim)
@@ -239,6 +369,9 @@ def preprocess_raw(
 
     Parameters
     ----------
+    raw : mne.io.BaseRaw
+        Continuous raw recording with montage already applied.
+        ``raw.get_data()`` has shape ``(n_channels, n_times)`` (see SCHEMA §1).
     l_freq, h_freq
         Bandpass cutoffs in Hz. If both are ``None`` the filter step is
         skipped; one-sided filters are valid (``l_freq=None`` for lowpass-only,
@@ -266,7 +399,7 @@ def preprocess_raw(
     cleaned : mne.io.BaseRaw
         Cleaned continuous raw; when the sliding-window step runs it carries
         bad-interval ``Annotations`` (label ``bad_minmax_zscore``) ready for
-        downstream epoching.
+        downstream epoching. ``get_data()`` shape: ``(n_channels, n_times)``.
     bad_channels : list[str]
         Channels flagged before interpolation (for the pipeline sidecar log).
         Empty when the bad-channel step is skipped.

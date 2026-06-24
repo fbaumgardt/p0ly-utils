@@ -242,6 +242,21 @@ class TestArtefactRejection:
         annot = artefact_rejection(raw, threshold=3.0, duration=1.0, stimulation=(None, None))
         assert len(annot) == 0
 
+    def test_partial_rejection(self):
+        """Only some epochs contain artefacts → only those annotated.
+
+        10s / 1s epochs → 10 epochs. One spike in epoch 4 (sample 1152).
+        With 1 of 10 epochs as an outlier, the z-score clears the threshold;
+        the remaining 9 clean epochs are not flagged.
+        """
+        raw = _make_raw(duration=10.0, sfreq=256.0)
+        data = raw.get_data()
+        data[:, 1152] = 10.0  # epoch 4 (samples 1024–1279)
+        raw._data[:] = data
+        annot = artefact_rejection(raw, threshold=DETECTION_THRESHOLD, duration=1.0)
+        assert len(annot) == 1
+        assert any(abs(onset - 4.0) < 1.0 for onset in annot.onset)
+
 
 # ---------------------------------------------------------------------------
 # ica_clean_dnn
