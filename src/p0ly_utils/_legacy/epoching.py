@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 def compute_epochs(
     raw: mne.io.BaseRaw,
     experiment: ExperimentSpec,
+    intervals: dict[str, tuple[float, float]],
     csv_path: str | None = None,
     output_dir: str | None = None,
 ) -> dict[str, mne.Epochs]:
@@ -26,13 +27,21 @@ def compute_epochs(
     ``get_metadata`` function, and epochs are aligned to metadata rows by
     reciprocal nearest-onset matching via :func:`align_epochs_metadata`.
 
+    .. deprecated:: US-021
+        This legacy module is unimported. ``ExperimentSpec.intervals`` was
+        removed (windows now live in ``config.yaml epoching.intervals``);
+        callers must pass an explicit ``intervals`` dict here.
+
     Parameters
     ----------
     raw : mne.io.BaseRaw
         Raw EEG data with annotations.
     experiment : ExperimentSpec
-        Experiment specification defining timelocks, intervals, and metadata
-        extraction rules.
+        Experiment specification defining timelocks and metadata extraction
+        rules (no longer carries windows).
+    intervals : dict[str, tuple[float, float]]
+        Per-timelock ``(tmin, tmax)`` windows in seconds — sourced from
+        ``config.yaml epoching.intervals`` (ADR-006).
     csv_path : str | None
         Path to an external trial-level CSV (e.g. PTB log for ``intwm``)
         whose columns are merged into the metadata by the experiment spec.
@@ -91,7 +100,7 @@ def compute_epochs(
         try:
             tmin: float
             tmax: float
-            tmin, tmax = experiment.intervals[lck]
+            tmin, tmax = intervals[lck]
 
             # Map spec code labels → MNE integer event IDs.
             evt_id: dict[str, int] = {

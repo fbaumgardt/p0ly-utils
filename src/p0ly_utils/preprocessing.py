@@ -344,8 +344,8 @@ def preprocess_raw(
     bad_channel_z_thresh: float | None = None,
     ica_strategy: str | None = None,
     icalabel_threshold: float | None = None,
-    epoch_window_ms: int | None = None,
-    epoch_reject_z_thresh: float | None = None,
+    interval_window_ms: int | None = None,
+    interval_reject_z_thresh: float | None = None,
 ) -> tuple[mne.io.BaseRaw, list[str], ICA | None]:
     """Chain the continuous-data preprocessing steps on one raw recording.
 
@@ -380,11 +380,11 @@ def preprocess_raw(
     icalabel_threshold
         ICLabel predicted-class probability cutoff; ignored unless
         ``ica_strategy == "mne-icalabel"`` (and ignored when ICA is skipped).
-    epoch_window_ms
+    interval_window_ms
         Sliding-window length in milliseconds (converted to seconds). The
-        sliding-window step is skipped unless **both** ``epoch_window_ms`` and
-        ``epoch_reject_z_thresh`` are set.
-    epoch_reject_z_thresh
+        sliding-window step is skipped unless **both** ``interval_window_ms`` and
+        ``interval_reject_z_thresh`` are set.
+    interval_reject_z_thresh
         Peak-to-peak Z-score cutoff for :func:`artefact_rejection`.
 
     Returns
@@ -441,11 +441,11 @@ def preprocess_raw(
 
     # 4. sliding-window reject on continuous data -> Annotations persisted.
     #    Both the window size and the threshold are required to run the step.
-    if epoch_window_ms is not None and epoch_reject_z_thresh is not None:
+    if interval_window_ms is not None and interval_reject_z_thresh is not None:
         annots = artefact_rejection(
             raw,
-            threshold=epoch_reject_z_thresh,
-            duration=epoch_window_ms / 1000.0,
+            threshold=interval_reject_z_thresh,
+            duration=interval_window_ms / 1000.0,
         )
         raw = raw.set_annotations(raw.annotations + annots)
 

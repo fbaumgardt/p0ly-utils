@@ -396,8 +396,8 @@ class TestPreprocessRaw:
             bad_channel_z_thresh=2.5,
             ica_strategy="mne-icalabel",
             icalabel_threshold=0.75,
-            epoch_window_ms=500,
-            epoch_reject_z_thresh=3.0,
+            interval_window_ms=500,
+            interval_reject_z_thresh=3.0,
         )
         cfg.update(overrides)
         return cfg
@@ -453,7 +453,7 @@ class TestPreprocessRaw:
         data = raw.get_data()
         data[:, 4000:4050] += 1e-3  # ~1 mV step across all channels
         raw._data[:] = data
-        cleaned, _, _ = preprocess_raw(raw, **self._cfg(epoch_reject_z_thresh=2.5))
+        cleaned, _, _ = preprocess_raw(raw, **self._cfg(interval_reject_z_thresh=2.5))
         descs = list(cleaned.annotations.description)
         assert "bad_minmax_zscore" in descs
 
@@ -570,10 +570,10 @@ class TestPreprocessRawOptional:
             preprocess_raw(raw, l_freq=None, h_freq=None, ica_strategy="bogus")
 
     def test_sliding_window_partial_skips_step(self, raw):
-        # epoch_window_ms set but epoch_reject_z_thresh=None -> step skipped,
+        # interval_window_ms set but interval_reject_z_thresh=None -> step skipped,
         # no bad_minmax_zscore annotations added (S4 + both-required rule).
         cleaned, _, _ = preprocess_raw(
-            raw, l_freq=None, h_freq=None, epoch_window_ms=500, epoch_reject_z_thresh=None
+            raw, l_freq=None, h_freq=None, interval_window_ms=500, interval_reject_z_thresh=None
         )
         assert all(d != "bad_minmax_zscore" for d in cleaned.annotations.description)
 
@@ -583,7 +583,7 @@ class TestPreprocessRawOptional:
         data[:, 4000:4050] += 1e-3
         raw._data[:] = data
         cleaned, _, _ = preprocess_raw(
-            raw, l_freq=None, h_freq=None, epoch_window_ms=500, epoch_reject_z_thresh=2.5
+            raw, l_freq=None, h_freq=None, interval_window_ms=500, interval_reject_z_thresh=2.5
         )
         descs = list(cleaned.annotations.description)
         assert "bad_minmax_zscore" in descs
