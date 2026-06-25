@@ -1,11 +1,46 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import pandas as pd
 
 from p0ly_utils.metadata.core import DerivedColumn, ExperimentSpec
+
+if TYPE_CHECKING:
+    import mne
+
+
+# Canonical event-frame columns that ``parse_metadata`` consumes. ``raw.annotations``
+# provides both; this helper only narrows to the two the parser needs.
+_EVENT_COLUMNS = ["description", "onset"]
+
+
+def events_from_raw(raw: mne.io.BaseRaw) -> pd.DataFrame:
+    """Extract Psychtoolbox event-marker annotations from a raw object.
+
+    Returns a DataFrame with the ``description`` / ``onset`` columns that
+    ``parse_metadata`` expects (onset in seconds, per ``raw.annotations``).
+    No epoching, no filtering, no file writes — the parser selects and
+    assigns blocks/trials downstream.
+
+    Parameters
+    ----------
+    raw : mne.io.BaseRaw
+        Raw object carrying event-marker ``Annotations`` (shape ``(n_channels,
+        n_times)`` for the underlying data; ``n_annotations`` markers).
+
+    Returns
+    -------
+    pd.DataFrame
+        Columns ``description`` (str), ``onset`` (float, seconds). One row per
+        annotation, in marker order. Empty frame with the correct columns when
+        the raw carries no annotations.
+    """
+    ann = raw.annotations
+    if len(ann) == 0:
+        return pd.DataFrame(columns=_EVENT_COLUMNS)
+    return pd.DataFrame({"description": ann.description, "onset": ann.onset})
 
 # Canonical "Nothing" value: carries the exact schema that the downstream
 # groupby(["_Block", "_Trial"]) in parse_metadata depends on, so an empty
@@ -81,7 +116,7 @@ def _prepare_event_frame(spec: ExperimentSpec, df: pd.DataFrame) -> pd.DataFrame
 
 
 def _extract_row(spec: ExperimentSpec, group: pd.DataFrame, block: int, trial: int) -> dict:
-    row: dict = {"Block": block, "Trial": trial}
+    row: dict = {"Block": block, "Trial": trial, "Onset": float(group["onset"].iloc[0])}
     # Two passes over `columns`: plain extractors read from the event group,
     # while DerivedColumns read from the row built so far. The second loop must
     # run last so every value a DerivedColumn depends on is already populated.

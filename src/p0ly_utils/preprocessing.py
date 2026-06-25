@@ -19,6 +19,32 @@ def _minmax_zscore(
     epoch (axis='time'), then outliers (|z| > threshold) are identified
     iteratively. At each step the mean and std are re-estimated on the unmasked
     subset, so earlier outliers don't inflate the baseline.
+
+    Parameters
+    ----------
+    inst
+        MNE object to score. When ``axis='channels'``, ``inst.get_data()``
+        has shape ``(n_channels, n_times)`` (a ``Raw``). When ``axis='time'``,
+        ``inst.get_data()`` has shape ``(n_epochs, n_channels, n_times)``
+        (an ``Epochs`` object) — the data is averaged over channels first so
+        that the score reflects per-epoch amplitude.
+    axis
+        ``'channels'`` to flag outlier channels (per-channel peak-to-peak),
+        ``'time'`` to flag outlier epochs (per-epoch peak-to-peak).
+    threshold
+        Z-score cutoff; samples with ``|z| >= threshold`` are flagged.
+    max_iter
+        Number of iterative refinement passes (re-estimate mean/std on the
+        unmasked subset each pass).
+    mask
+        Optional pre-existing boolean mask of shape ``(n_channels,)`` or
+        ``(n_epochs,)``; masked entries are excluded from the baseline.
+
+    Returns
+    -------
+    np.ndarray
+        Boolean mask of shape ``(n_channels,)`` when ``axis='channels'`` or
+        ``(n_epochs,)`` when ``axis='time'``. ``True`` marks an outlier.
     """
     data = inst.get_data()
     if axis == "time":
@@ -39,13 +65,65 @@ def fix_channels(
     threshold: float = 3.0,
     max_iter: int = 1,
 ) -> mne.io.BaseRaw:
-    """Return a copy of raw with statistically extreme channels added to bads."""
+    """Return a copy of raw with statistically extreme channels added to bads.
+
+    Flags outlier channels via peak-to-peak Z-scoring (see ``_minmax_zscore``)
+    and appends them to ``info["bads"]``. Interpolation is **not** performed
+    here — call :func:`interpolate_bads` afterwards to reconstruct the dropped
+    channels with MNE's spherical-spline interpolator.
+
+    Parameters
+    ----------
+    raw
+        Continuous raw recording. ``raw.get_data()`` has shape
+        ``(n_channels, n_times)`` (see SCHEMA §1).
+    threshold
+        Z-score cutoff for peak-to-peak distance.
+    max_iter
+        Number of iterative refinement passes in :func:`_minmax_zscore`.
+
+    Returns
+    -------
+    mne.io.BaseRaw
+        Copy of ``raw`` with ``info["bads"]`` updated. Data shape is
+        unchanged: ``(n_channels, n_times)``.
+    """
     r = raw.copy()
     bad_mask = _minmax_zscore(r, threshold=threshold, max_iter=max_iter)
     new_bads = np.array(r.ch_names)[bad_mask].tolist()
     r.info["bads"] = np.unique(
         np.concatenate((np.array(r.info["bads"]), np.array(new_bads)))
     ).tolist()
+    return r
+
+
+def interpolate_bads(
+    raw: mne.io.BaseRaw,
+    reset_bads: bool = True,
+) -> mne.io.BaseRaw:
+    """Return a copy of raw with ``info["bads"]`` channels interpolated.
+
+    Spherical-spline interpolation (MNE default). With ``reset_bads=True`` the
+    interpolated channels are cleared from ``info["bads"]`` so downstream
+    steps (ICA, sliding-window rejection) see a full, clean sensor array.
+    The input raw is never mutated.
+
+    Parameters
+    ----------
+    raw
+        Continuous raw recording with ``info["bads"]`` populated.
+        ``raw.get_data()`` has shape ``(n_channels, n_times)`` (see SCHEMA §1).
+    reset_bads
+        If ``True``, clear interpolated channels from ``info["bads"]``.
+
+    Returns
+    -------
+    mne.io.BaseRaw
+        Copy of ``raw`` with bad channels interpolated. Data shape is
+        unchanged: ``(n_channels, n_times)``.
+    """
+    r = raw.copy()
+    r.interpolate_bads(reset_bads=reset_bads)
     return r
 
 
@@ -64,6 +142,29 @@ def artefact_rejection(
     stimulation: optional (start, end) window in seconds to exclude from the
     z-score baseline (e.g. a stimulation artefact window). None endpoints mean
     the beginning / end of the recording. Pass None to skip masking entirely.
+
+    Parameters
+    ----------
+    raw
+        Continuous raw recording. ``raw.get_data()`` has shape
+        ``(n_channels, n_times)`` (see SCHEMA §1).
+    threshold
+        Z-score cutoff for peak-to-peak distance per epoch.
+    max_iter
+        Number of iterative refinement passes in :func:`_minmax_zscore`.
+    duration
+        Fixed-length epoch size in seconds used to segment the raw.
+    stimulation
+        Optional ``(start, end)`` window in seconds to exclude from the
+        z-score baseline. ``None`` endpoints mean beginning / end of recording.
+        Pass ``None`` to skip masking entirely.
+
+    Returns
+    -------
+    mne.Annotations
+        Annotations for each bad segment. ``onset``, ``duration``, and
+        ``description`` arrays each have shape ``(n_annotations,)``. The label
+        is ``'bad_minmax_zscore'`` for every annotation.
     """
     epo = mne.make_fixed_length_epochs(raw, duration=duration, reject_by_annotation=False)
 
@@ -85,12 +186,20 @@ def artefact_rejection(
 
 def ica_clean_dnn(
     raw: mne.io.BaseRaw,
-    exclude_components: list[str] = ["eye blink","muscle artifact"],
+    exclude_components: list[str] = ["eye blink", "muscle artifact"],
+    threshold: float | None = None,
     bandpass: tuple[float, float] = (1.0, 100.0),
     duration: float | tuple[float, float] | None = None,
     n_jobs: int = 1,
 ) -> tuple[mne.io.BaseRaw, ICA]:
     """Remove artefact ICA components identified by ICLabel (DNN-based).
+
+    A component ``i`` is excluded when its ICLabel ``labels[i]`` is in
+    ``exclude_components``. When ``threshold`` is not None, the component is
+    additionally required to carry a predicted-class probability
+    ``y_pred_proba[i] >= threshold`` (range 0–1); this guards against removing
+    low-confidence classifications. Pass ``threshold=None`` to keep the
+    label-only behaviour.
 
     duration controls how much of the recording is used to fit the ICA:
       - None: use the full recording.
@@ -99,6 +208,32 @@ def ica_clean_dnn(
 
     The input raw is never mutated; a cleaned copy is returned together with the
     fitted ICA object for inspection.
+
+    Parameters
+    ----------
+    raw
+        Continuous raw recording. ``raw.get_data()`` has shape
+        ``(n_channels, n_times)`` (see SCHEMA §1).
+    exclude_components
+        ICLabel label names to exclude (e.g. ``'eye blink'``, ``'muscle artifact'``).
+    threshold
+        ICLabel predicted-class probability cutoff. ``None`` keeps label-only
+        behaviour.
+    bandpass
+        ``(l_freq, h_freq)`` applied to the copy used for ICA fitting.
+    duration
+        Controls the fitting window: ``None`` for full recording,
+        ``(tmin, tmax)`` for explicit crop, ``float`` for centred window.
+    n_jobs
+        Number of parallel jobs for filtering.
+
+    Returns
+    -------
+    cleaned : mne.io.BaseRaw
+        Copy of ``raw`` with artefact components removed. Data shape is
+        unchanged: ``(n_channels, n_times)``.
+    ica : mne.preprocessing.ICA
+        Fitted ICA object with ``.exclude`` populated.
     """
 
     r_ic = raw.copy().filter(*bandpass, n_jobs=n_jobs)
@@ -122,7 +257,18 @@ def ica_clean_dnn(
     )
     ica.fit(r_ic)
     labels = label_components(r_ic, ica, method="iclabel")
-    ica.exclude = [i for i, label in enumerate(labels["labels"]) if label in exclude_components]
+    proba = labels["y_pred_proba"]
+    label_names = labels["labels"]
+    if threshold is not None:
+        ica.exclude = [
+            i
+            for i, (label, p) in enumerate(zip(label_names, proba))
+            if label in exclude_components and float(p) >= threshold
+        ]
+    else:
+        ica.exclude = [
+            i for i, label in enumerate(label_names) if label in exclude_components
+        ]
 
     cleaned = raw.copy()
     ica.apply(cleaned)
@@ -142,6 +288,31 @@ def ica_clean_regression(
     EOG channels are detected automatically from raw.info. The search window
     for find_bads_eog is capped at 1000 s from tmin to keep it tractable on
     long recordings. The input raw is never mutated.
+
+    Parameters
+    ----------
+    raw
+        Continuous raw recording with EEG + EOG channels.
+        ``raw.get_data()`` has shape ``(n_channels, n_times)`` where
+        ``n_channels`` includes both EEG and EOG channels (see SCHEMA §1).
+    bandpass
+        ``(l_freq, h_freq)`` applied to the copy used for ICA fitting.
+    decim
+        Decimation factor for ICA fitting.
+    components
+        Number of ICA components to compute.
+    tmin
+        Start time (s) of the fitting window.
+    tmax
+        End time (s) of the fitting window. ``None`` uses the recording end.
+
+    Returns
+    -------
+    cleaned : mne.io.BaseRaw
+        Copy of ``raw`` with EOG artefact components removed. Data shape is
+        unchanged: ``(n_channels, n_times)``.
+    ica : mne.preprocessing.ICA
+        Fitted ICA object with ``.exclude`` populated.
     """
     r_ic = raw.copy().crop(tmin=tmin, tmax=tmax).filter(*bandpass)
     ica = ICA(n_components=components).fit(r_ic, decim=decim)
@@ -163,3 +334,126 @@ def ica_clean_regression(
     cleaned = raw.copy()
     ica.apply(cleaned)
     return cleaned, ica
+
+
+def preprocess_raw(
+    raw: mne.io.BaseRaw,
+    *,
+    l_freq: float | None = None,
+    h_freq: float | None = None,
+    bad_channel_z_thresh: float | None = None,
+    ica_strategy: str | None = None,
+    icalabel_threshold: float | None = None,
+    epoch_window_ms: int | None = None,
+    epoch_reject_z_thresh: float | None = None,
+) -> tuple[mne.io.BaseRaw, list[str], ICA | None]:
+    """Chain the continuous-data preprocessing pipeline on one raw recording.
+
+    Single-rule pipeline per PRD Core App §3 stage 2 (no per-step FIF
+    intermediates): bandpass filter -> bad-channel flag + interpolate -> ICA
+    -> sliding-window artefact rejection. Operates on **continuous
+    (un-segmented)** data.
+
+    Every step is **optional**: a parameter left ``None`` skips its step. This
+    lets the pipeline run partial chains (e.g. filter-only, or ICA without
+    bad-channel detection) by omitting keys from ``config.yaml``'s
+    ``preprocessing`` block.
+
+    Parameters are explicit keyword arguments (not a config dict) so the
+    library stays free of ``config.yaml`` key naming and file-format
+    conventions; the pipeline script maps config keys to these kwargs.
+
+    A montage must already be applied (the spatial-filtering step is owned by
+    ingestion, see US-007); this function asserts it is present. The input raw
+    is never mutated (a private copy is made unconditionally).
+
+    Parameters
+    ----------
+    raw : mne.io.BaseRaw
+        Continuous raw recording with montage already applied.
+        ``raw.get_data()`` has shape ``(n_channels, n_times)`` (see SCHEMA §1).
+    l_freq, h_freq
+        Bandpass cutoffs in Hz. If both are ``None`` the filter step is
+        skipped; one-sided filters are valid (``l_freq=None`` for lowpass-only,
+        ``h_freq=None`` for highpass-only) and passed through to MNE.
+    bad_channel_z_thresh
+        Z-score cutoff for :func:`fix_channels`. If ``None``, the
+        bad-channel flag + interpolate step is skipped and ``bad_channels``
+        is empty.
+    ica_strategy
+        ``"mne-icalabel"`` (ICLabel DNN), ``"find_bads_eog"`` (regression),
+        or ``None`` to skip ICA. An unrecognised string raises ``ValueError``
+        (``None`` is distinct from an invalid strategy).
+    icalabel_threshold
+        ICLabel predicted-class probability cutoff; ignored unless
+        ``ica_strategy == "mne-icalabel"`` (and ignored when ICA is skipped).
+    epoch_window_ms
+        Sliding-window length in milliseconds (converted to seconds). The
+        sliding-window step is skipped unless **both** ``epoch_window_ms`` and
+        ``epoch_reject_z_thresh`` are set.
+    epoch_reject_z_thresh
+        Peak-to-peak Z-score cutoff for :func:`artefact_rejection`.
+
+    Returns
+    -------
+    cleaned : mne.io.BaseRaw
+        Cleaned continuous raw; when the sliding-window step runs it carries
+        bad-interval ``Annotations`` (label ``bad_minmax_zscore``) ready for
+        downstream epoching. ``get_data()`` shape: ``(n_channels, n_times)``.
+    bad_channels : list[str]
+        Channels flagged before interpolation (for the pipeline sidecar log).
+        Empty when the bad-channel step is skipped.
+    ica : mne.preprocessing.ICA | None
+        The fitted ICA object (with ``.exclude`` / ``.labels_`` populated) when
+        the ICA step ran, else ``None``. Callers can persist it (``ica.save``)
+        or read ``ica.exclude`` for component-exclusion reporting.
+    """
+    if raw.get_montage() is None:
+        raise RuntimeError(
+            "Montage missing on input raw; ingestion must apply it before preprocessing."
+        )
+
+    # Work on a private copy so the caller's raw is never mutated. The copy is
+    # unconditional — non-mutation is a library invariant independent of which
+    # steps run.
+    raw = raw.copy()
+    bad_channels: list[str] = []
+    ica_obj: ICA | None = None
+
+    # 1. bandpass filter on the full continuous recording. Skipped only when
+    #    both cutoffs are None; one-sided filters are delegated to MNE.
+    if l_freq is not None or h_freq is not None:
+        raw = raw.filter(l_freq=l_freq, h_freq=h_freq)
+
+    # 2. bad channels -> flag + interpolate (spherical spline). One guard gates
+    #    the flag+interpolate pair; the pre-interpolation set is captured for
+    #    the caller's sidecar log.
+    if bad_channel_z_thresh is not None:
+        raw = fix_channels(raw, threshold=bad_channel_z_thresh)
+        bad_channels = list(raw.info["bads"])
+        raw = interpolate_bads(raw)
+
+    # 3. ICA on the cleaned continuous raw. ica_strategy=None skips ICA;
+    #    an unrecognised string is still an error (None != invalid strategy).
+    if ica_strategy is not None:
+        if ica_strategy == "mne-icalabel":
+            raw, ica_obj = ica_clean_dnn(raw, threshold=icalabel_threshold)
+        elif ica_strategy == "find_bads_eog":
+            raw, ica_obj = ica_clean_regression(raw)
+        else:
+            raise ValueError(
+                f"Unknown ica_strategy {ica_strategy!r} "
+                "(expected 'mne-icalabel', 'find_bads_eog', or None to skip ICA)."
+            )
+
+    # 4. sliding-window reject on continuous data -> Annotations persisted.
+    #    Both the window size and the threshold are required to run the step.
+    if epoch_window_ms is not None and epoch_reject_z_thresh is not None:
+        annots = artefact_rejection(
+            raw,
+            threshold=epoch_reject_z_thresh,
+            duration=epoch_window_ms / 1000.0,
+        )
+        raw = raw.set_annotations(raw.annotations + annots)
+
+    return raw, bad_channels, ica_obj

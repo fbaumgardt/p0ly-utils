@@ -9,7 +9,7 @@ from p0ly_utils.metadata.core import (
     ListCollect,
     RTMeasure,
 )
-from p0ly_utils.metadata.parser import parse_metadata
+from p0ly_utils.metadata.parser import events_from_raw, parse_metadata
 
 __all__ = [
     "BoolPresence",
@@ -22,9 +22,10 @@ __all__ = [
     "RTMeasure",
     "dmss",
     "dotprobe",
+    "events_from_raw",
     "igt",
     "intwm",
     "mgsearch",
-    "simonfb",
     "parse_metadata",
+    "simonfb",
 ]
