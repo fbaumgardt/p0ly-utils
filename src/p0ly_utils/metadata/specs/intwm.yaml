@@ -6,9 +6,6 @@ timelocks:
   resp:
     resp/incorrect: "Stim/S250"
     resp/correct: "Stim/S251"
-intervals:
-  cue: [-0.2, 1.0]
-  resp: [-1.0, 0.2]
 trial_codes_range: [81, 99]
 columns:
   Correct:

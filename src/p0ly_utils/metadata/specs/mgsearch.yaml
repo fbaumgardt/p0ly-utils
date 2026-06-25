@@ -10,10 +10,6 @@ timelocks:
     correct: "Stim/S189"
     incorrect: "Stim/S190"
     none: "Stim/S191"
-intervals:
-  stim: [-0.2, 1.2]
-  prob: [-0.2, 1.2]
-  resp: [-1.2, 0.2]
 trial_codes:
   - "Stim/S182"
 infer_block_from: Cue_side

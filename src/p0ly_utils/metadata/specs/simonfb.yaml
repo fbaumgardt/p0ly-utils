@@ -7,10 +7,6 @@ timelocks:
     none: "Stim/S 39"
   fdb:
     all: "Stim/S 22"
-intervals:
-  stim: [-0.2, 1.0]
-  resp: [-1.0, 0.2]
-  fdb: [-0.2, 1.0]
 trial_codes:
   - "Stim/S 17"
 block_codes:
