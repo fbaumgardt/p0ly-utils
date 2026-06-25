@@ -1,12 +1,19 @@
 from __future__ import annotations
 
+import warnings
+
 import mne
 import numpy as np
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from p0ly_utils.epoching import _match_onsets, align_epochs_metadata, epoch_with_metadata
+from p0ly_utils.epoching import (
+    _match_onsets,
+    align_epochs_metadata,
+    epoch_with_metadata,
+    validate_intervals,
+)
 from p0ly_utils.metadata import dmss, events_from_raw, igt, parse_metadata
 
 sorted_onsets = st.lists(
@@ -162,7 +169,9 @@ def _dmss_epochs(rows: list[tuple[float, str]]):
     raw = _raw_with_annotations(rows)
     events = events_from_raw(raw)
     metadata = parse_metadata(dmss.spec, events)
-    return epoch_with_metadata(raw, dmss.spec, "stim", metadata, _DMSS_BASELINE)
+    return epoch_with_metadata(
+        raw, dmss.spec, "stim", metadata, _DMSS_BASELINE, interval=[-0.2, 1.2]
+    )
 
 
 class TestEpochWithMetadataClean:
@@ -223,7 +232,7 @@ class TestEpochWithMetadataExpansion:
         metadata = parse_metadata(igt.spec, events, expand_trials=True)
         assert len(metadata) == 2
         epochs, excluded = epoch_with_metadata(
-            raw, igt.spec, "select", metadata, _DMSS_BASELINE
+            raw, igt.spec, "select", metadata, _DMSS_BASELINE, interval=[-1.2, 0.2]
         )
         assert len(epochs) == 2
         assert list(epochs.metadata["Num_Sel"]) == [0, 1]
@@ -240,13 +249,84 @@ class TestEpochWithMetadataBadInterval:
         events = events_from_raw(raw)
         metadata = parse_metadata(dmss.spec, events)
         epochs, excluded = epoch_with_metadata(
-            raw, dmss.spec, "stim", metadata, _DMSS_BASELINE
+            raw, dmss.spec, "stim", metadata, _DMSS_BASELINE, interval=[-0.2, 1.2]
         )
         assert len(epochs) == 1
         assert list(epochs.metadata["Trial"]) == [1]
         assert len(excluded) == 1
         assert excluded.iloc[0]["Trial"] == 2
         assert excluded.iloc[0]["reason"] == "bad_interval"
+
+
+class TestEpochWithMetadataBadFlag:
+    def test_bad_column_present_survivors_false(self):
+        # US-020: ``BAD`` column is retained in the returned metadata; survivors
+        # all carry ``BAD=False``. A bad_epoch's ``bad_interval`` row carries the
+        # epoch's own timelock onset (SCHEMA §6 clarification).
+        rows = _DMSS_ROWS + [(1.5, "bad_minmax_zscore")]
+        raw = _raw_with_annotations(rows, durations=([0.0] * len(_DMSS_ROWS)) + [0.3])
+        events = events_from_raw(raw)
+        metadata = parse_metadata(dmss.spec, events)
+        epochs, excluded = epoch_with_metadata(
+            raw, dmss.spec, "stim", metadata, _DMSS_BASELINE, interval=[-0.2, 1.2]
+        )
+        assert "BAD" in epochs.metadata.columns
+        assert len(epochs) == 1
+        assert bool(epochs.metadata["BAD"].iloc[0]) is False
+        assert len(excluded) == 1
+        assert excluded.iloc[0]["reason"] == "bad_interval"
+        assert excluded.iloc[0]["Trial"] == 2
+        # bad_interval onset = the bad epoch's timelock onset (trial 2 stim).
+        assert excluded.iloc[0]["Onset"] == pytest.approx(1.4)
+
+
+class TestEpochWithMetadataNumSelContiguity:
+    def test_bad_middle_selection_keeps_num_sel_contiguous(self):
+        # US-020 regression: IGT trial with 3 selections whose MIDDLE one
+        # overlaps a ``bad_minmax_zscore`` annotation. With flag-then-drop the
+        # bad epoch stays present during cumcount, so survivors keep
+        # ``Num_Sel == [0, 2]`` (NOT renumbered to [0, 1]) and each joins its
+        # OWN metadata row (selection 2's onset ≠ selection 1's onset). Drop-early
+        # renamed survivors 0,1 and let selection 2 steal selection 1's row.
+        rows = [
+            (1.5, "Stim/S 20"),    # block
+            (1.6, "Stim/S 30"),    # trial
+            (3.0, "Stim/S 40"),    # selection 1 (Num_Sel 0)
+            (3.05, "Stim/S 41"),   # Card A
+            (3.1, "Stim/S 45"),    # Deck 1
+            (4.5, "Stim/S 40"),    # selection 2 (Num_Sel 1) — BAD
+            (4.55, "Stim/S 42"),   # Card B
+            (4.6, "Stim/S 46"),    # Deck 2
+            (4.5, "bad_minmax_zscore"),  # overlaps only selection 2 window
+            (6.0, "Stim/S 40"),    # selection 3 (Num_Sel 2)
+            (6.05, "Stim/S 43"),   # Card C
+            (6.1, "Stim/S 47"),    # Deck 3
+            (7.0, "Stim/S 50"),    # submit
+            (7.1, "Stim/S 61"),    # Result 1
+            (7.2, "Stim/S 31"),    # trial end
+            (7.3, "Stim/S 21"),    # block end
+        ]
+        durations = [0.1 if d == "bad_minmax_zscore" else 0.0 for _, d in rows]
+        raw = _raw_with_annotations(rows, durations=durations)
+        events = events_from_raw(raw)
+        metadata = parse_metadata(igt.spec, events, expand_trials=True)
+        assert len(metadata) == 3
+        epochs, excluded = epoch_with_metadata(
+            raw, igt.spec, "select", metadata, _DMSS_BASELINE, interval=[-1.2, 0.2]
+        )
+        # The middle (bad) selection drops; the survivors keep their real Num_Sel.
+        assert len(epochs) == 2
+        assert list(epochs.metadata["Num_Sel"]) == [0, 2]
+        # Each survivor joins its OWN metadata row — selection 0 → Card A / Deck
+        # "1", selection 2 → Card C / Deck "3". Drop-early renamed survivors to
+        # [0, 1] so selection 2 stole selection 1's row (Card B / Deck "2").
+        assert list(epochs.metadata["Card"]) == ["A", "C"]
+        assert list(epochs.metadata["Deck"]) == ["1", "3"]
+        assert len(excluded) == 1
+        assert excluded.iloc[0]["reason"] == "bad_interval"
+        assert excluded.iloc[0]["Trial"] == 1
+        # bad_interval onset = the bad middle epoch's timelock onset (select at 4.5).
+        assert excluded.iloc[0]["Onset"] == pytest.approx(4.5)
 
 
 class TestEpochWithMetadataEmpty:
@@ -275,7 +355,7 @@ class TestAlignEpochsMetadataSeconds:
         ev_id = {k.replace("Stimulus", "Stim"): v for k, v in ev_id.items()}
         stim_ids = [ev_id[c] for c in dmss.spec.timelocks["stim"].values() if c in ev_id]
         stim_ev = ev[np.isin(ev[:, 2], stim_ids)]
-        tmin, tmax = dmss.spec.intervals["stim"]
+        tmin, tmax = (-0.2, 1.2)  # dmss stim window (config epoching.intervals, ADR-006)
         evt_id = {k: ev_id[v] for k, v in dmss.spec.timelocks["stim"].items() if v in ev_id}
         epochs = mne.Epochs(
             raw, stim_ev, evt_id,
@@ -284,3 +364,61 @@ class TestAlignEpochsMetadataSeconds:
         aligned = align_epochs_metadata(epochs, metadata)
         assert len(aligned) == 2
         assert list(aligned.metadata["Trial"]) == [1, 2]
+
+
+class TestEpochWithMetadataExplicitInterval:
+    def test_takes_explicit_interval(self):
+        # US-021: epoch window comes from the explicit ``interval`` kwarg
+        # (config epoching.intervals), not spec.intervals (removed). A wide
+        # window vs a narrow one cuts different lengths.
+        raw = _raw_with_annotations(_DMSS_ROWS)
+        events = events_from_raw(raw)
+        metadata = parse_metadata(dmss.spec, events)
+        wide, _ = epoch_with_metadata(
+            raw, dmss.spec, "stim", metadata, _DMSS_BASELINE, interval=[-0.2, 1.2]
+        )
+        narrow, _ = epoch_with_metadata(
+            raw, dmss.spec, "stim", metadata, None, interval=[-0.1, 0.1]
+        )
+        assert len(wide) == 2 and len(narrow) == 2
+        assert wide.tmax - wide.tmin == pytest.approx(1.4)
+        assert narrow.tmax - narrow.tmin == pytest.approx(0.2)
+
+
+class TestValidateIntervals:
+    def test_exact_match_no_warn_no_error(self):
+        # Keys coincide → neither warning nor error.
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            validate_intervals({"stim": 0}, {"stim": [-0.2, 1.2]})
+
+    def test_spec_extra_warns_does_not_stop(self):
+        # Spec declares a timelock the config doesn't → warn, proceed.
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            validate_intervals({"stim": 0, "prob": 0}, {"stim": [-0.2, 1.2]})
+        assert len(caught) == 1
+        assert "prob" in str(caught[0].message)
+
+    def test_spec_extra_narrowed_to_single_timelock(self):
+        # ``timelock=`` narrows the warning to that timelock only.
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            validate_intervals({"a": 0, "b": 0}, {"a": [0, 0]}, timelock="b")
+        assert len(caught) == 1 and "'b'" in str(caught[0].message)
+        # No warning when the single timelock IS configured.
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            validate_intervals({"a": 0, "b": 0}, {"a": [0, 0], "b": [0, 0]}, timelock="b")
+
+    def test_config_extra_raises_typo(self):
+        # Config has a key not in the spec → ValueError (likely typo).
+        with pytest.raises(ValueError, match="likely a typo"):
+            validate_intervals({"stim": 0}, {"stim": [-0.2, 1.2], "stmi": [0, 0]})
+
+    def test_no_intervals_for_requested_timelock_warns(self):
+        # Requesting a timelock absent from config → warn (legitimate skip).
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            validate_intervals({"stim": 0}, {}, timelock="stim")
+        assert len(caught) == 1 and "'stim'" in str(caught[0].message)
