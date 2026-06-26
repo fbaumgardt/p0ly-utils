@@ -49,7 +49,7 @@ def _minmax_zscore(
     data = inst.get_data()
     if axis == "time":
         # Average over channels first so that X reflects per-epoch amplitude.
-        data = np.mean(data, axis=1)
+        data = np.mean(data, axis=-2)  # axis=-2 works for both Epochs and Raw
     X: np.ndarray = np.max(data, axis=-1) - np.min(data, axis=-1)
     current_mask: np.ndarray = mask if mask is not None else np.zeros(len(X), dtype=bool)
     for _ in range(max_iter):
@@ -181,7 +181,9 @@ def artefact_rejection(
         epo, axis="time", threshold=threshold, max_iter=max_iter, mask=stim_mask
     )
     bad_starts = epo.events[bad_mask, 0] / epo.info["sfreq"]
-    return mne.Annotations(bad_starts, duration, "bad_minmax_zscore", orig_time=raw.annotations.orig_time)
+    return mne.Annotations(
+        bad_starts, duration, "bad_minmax_zscore", orig_time=raw.annotations.orig_time
+    )
 
 
 def ica_clean_dnn(
@@ -266,9 +268,7 @@ def ica_clean_dnn(
             if label in exclude_components and float(p) >= threshold
         ]
     else:
-        ica.exclude = [
-            i for i, label in enumerate(label_names) if label in exclude_components
-        ]
+        ica.exclude = [i for i, label in enumerate(label_names) if label in exclude_components]
 
     cleaned = raw.copy()
     ica.apply(cleaned)
@@ -344,28 +344,21 @@ def preprocess_raw(
     bad_channel_z_thresh: float | None = None,
     ica_strategy: str | None = None,
     icalabel_threshold: float | None = None,
-    epoch_window_ms: int | None = None,
-    epoch_reject_z_thresh: float | None = None,
+    interval_window_ms: int | None = None,
+    interval_reject_z_thresh: float | None = None,
 ) -> tuple[mne.io.BaseRaw, list[str], ICA | None]:
-    """Chain the continuous-data preprocessing pipeline on one raw recording.
+    """Chain the continuous-data preprocessing steps on one raw recording.
 
-    Single-rule pipeline per PRD Core App §3 stage 2 (no per-step FIF
-    intermediates): bandpass filter -> bad-channel flag + interpolate -> ICA
-    -> sliding-window artefact rejection. Operates on **continuous
-    (un-segmented)** data.
+    Single-rule pipeline (no per-step FIF intermediates): bandpass filter ->
+    bad-channel flag + interpolate -> ICA -> sliding-window artefact rejection.
+    Operates on **continuous (un-segmented)** data.
 
     Every step is **optional**: a parameter left ``None`` skips its step. This
     lets the pipeline run partial chains (e.g. filter-only, or ICA without
-    bad-channel detection) by omitting keys from ``config.yaml``'s
-    ``preprocessing`` block.
+    bad-channel detection.
 
-    Parameters are explicit keyword arguments (not a config dict) so the
-    library stays free of ``config.yaml`` key naming and file-format
-    conventions; the pipeline script maps config keys to these kwargs.
-
-    A montage must already be applied (the spatial-filtering step is owned by
-    ingestion, see US-007); this function asserts it is present. The input raw
-    is never mutated (a private copy is made unconditionally).
+    A montage must already be applied; this function asserts it is present. The
+    input raw is never mutated (a private copy is made unconditionally).
 
     Parameters
     ----------
@@ -387,11 +380,11 @@ def preprocess_raw(
     icalabel_threshold
         ICLabel predicted-class probability cutoff; ignored unless
         ``ica_strategy == "mne-icalabel"`` (and ignored when ICA is skipped).
-    epoch_window_ms
+    interval_window_ms
         Sliding-window length in milliseconds (converted to seconds). The
-        sliding-window step is skipped unless **both** ``epoch_window_ms`` and
-        ``epoch_reject_z_thresh`` are set.
-    epoch_reject_z_thresh
+        sliding-window step is skipped unless **both** ``interval_window_ms`` and
+        ``interval_reject_z_thresh`` are set.
+    interval_reject_z_thresh
         Peak-to-peak Z-score cutoff for :func:`artefact_rejection`.
 
     Returns
@@ -448,11 +441,11 @@ def preprocess_raw(
 
     # 4. sliding-window reject on continuous data -> Annotations persisted.
     #    Both the window size and the threshold are required to run the step.
-    if epoch_window_ms is not None and epoch_reject_z_thresh is not None:
+    if interval_window_ms is not None and interval_reject_z_thresh is not None:
         annots = artefact_rejection(
             raw,
-            threshold=epoch_reject_z_thresh,
-            duration=epoch_window_ms / 1000.0,
+            threshold=interval_reject_z_thresh,
+            duration=interval_window_ms / 1000.0,
         )
         raw = raw.set_annotations(raw.annotations + annots)
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from typing import TYPE_CHECKING
 
 import mne
@@ -7,6 +8,8 @@ import numpy as np
 import pandas as pd
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from p0ly_utils.metadata.core import ExperimentSpec
 
 
@@ -107,24 +110,107 @@ def _excluded_rows(
     )
 
 
-def _drop_reasons(drop_log: tuple[tuple[str, ...], ...]) -> np.ndarray:
-    """Classify each drop_log entry as ``bad_interval`` or ``dropped``.
+def _bad_epoch_mask(
+    epochs: mne.BaseEpochs,
+    raw: mne.io.BaseRaw,
+    tmin: float,
+    tmax: float,
+) -> np.ndarray:
+    """Boolean per epoch: ``True`` where ``[onset+tmin, onset+tmax]`` overlaps a ``bad*`` annotation.
 
-    ``mne.Epochs(reject_by_annotation=True)`` records the overlapping
-    annotation description (e.g. ``bad_minmax_zscore`` from US-008) in the
-    drop log; anything starting with ``bad`` (case-insensitive) is a
-    bad-interval reject.
+    Epochs are cut with ``reject_by_annotation=False`` so every candidate
+    survives segmentation; this mask flags the ones whose window intersects
+    any ``bad``-prefixed annotation on ``raw.annotations`` (e.g. US-008's
+    ``bad_minmax_zscore``). Two half-open intervals coincide when
+    ``ep_start < a_end`` and ``a_start < ep_end``.
+
+    Parameters
+    ----------
+    epochs : mne.BaseEpochs
+        Epochs cut with ``reject_by_annotation=False`` (all candidates present).
+    raw : mne.io.BaseRaw
+        Raw whose ``annotations`` carry the bad-interval markers.
+    tmin, tmax : float
+        Epoch window relative to the timelock onset (seconds).
+
+    Returns
+    -------
+    np.ndarray
+        Boolean array of shape ``(n_epochs,)``.
     """
-    reasons: list[str] = []
-    for entry in drop_log:
-        if any(str(tag).lower().startswith("bad") for tag in entry):
-            reasons.append("bad_interval")
-        else:
-            reasons.append("dropped")
-    return np.asarray(reasons, dtype=object)
+    sfreq = float(epochs.info["sfreq"])
+    onsets = epochs.events[:, 0] / sfreq
+    ep_start = onsets + tmin
+    ep_end = onsets + tmax
+    mask = np.zeros(len(onsets), dtype=bool)
+    for ann in raw.annotations:
+        if not str(ann["description"]).lower().startswith("bad"):
+            continue
+        a_start = float(ann["onset"])
+        a_end = a_start + float(ann["duration"])
+        mask |= (ep_start < a_end) & (a_start < ep_end)
+    return mask
 
 
-def _trial_lookup(trial_meta: pd.DataFrame, trial_onsets_s: np.ndarray):
+def validate_intervals(
+    spec_timelocks: Mapping[str, object],
+    config_intervals: Mapping[str, object],
+    *,
+    timelock: str | None = None,
+) -> None:
+    """Cross-check ``config`` epoch intervals against the spec's timelock keys.
+
+    Epoch windows live in the pipeline config (``epoching.intervals``), the
+    timelock event-code map lives in the experiment spec (``ExperimentSpec.
+    timelocks``). They share keys but are sourced independently, so drift is
+    possible. The guards are **asymmetric** (ADR-006):
+
+    * a spec timelock with no config interval → ``warnings.warn`` and proceed
+      (the spec may declare timelocks the current analysis isn't running);
+    * a config interval key that is not a spec timelock → ``ValueError``
+      (almost certainly a typo — no valid epoch can be cut for it).
+
+    Parameters
+    ----------
+    spec_timelocks
+        ``ExperimentSpec.timelocks`` (or any mapping keyed by timelock name).
+    config_intervals
+        ``config["epoching"]["intervals"]`` keyed by timelock name.
+    timelock
+        Optional single timelock being processed — narrows the spec-extra
+        warning to that timelock only; ``None`` checks the full key sets.
+
+    Raises
+    ------
+    ValueError
+        If ``config_intervals`` has a key absent from ``spec_timelocks``.
+    """
+    spec_keys = set(spec_timelocks)
+    cfg_keys = set(config_intervals)
+    unknown = cfg_keys - spec_keys
+    if unknown:
+        raise ValueError(
+            f"config epoching.intervals has key(s) {sorted(unknown)!r} "
+            f"not present in the spec's timelocks {sorted(spec_keys)!r}; "
+            f"this is likely a typo."
+        )
+    missing = spec_keys - cfg_keys
+    if timelock is not None:
+        if timelock in spec_keys and timelock not in cfg_keys:
+            warnings.warn(
+                f"timelock {timelock!r} is in the spec but has no entry in "
+                f"config epoching.intervals; skipping it for this analysis run.",
+                stacklevel=2,
+            )
+    elif missing:
+        warnings.warn(
+            f"spec timelock(s) {sorted(missing)!r} have no entry in config "
+            f"epoching.intervals; skipping them for this analysis run.",
+            stacklevel=2,
+        )
+
+
+def _trial_lookup(trial_onsets_s: np.ndarray):
     """Return (sorted_onsets, order) so searchsorted maps onsets to trial rows."""
     order = np.argsort(trial_onsets_s, kind="stable")
     return trial_onsets_s[order], order
@@ -137,29 +223,33 @@ def epoch_with_metadata(
     metadata: pd.DataFrame,
     baseline: list[float] | tuple[float, float] | None,
     *,
+    interval: list[float] | tuple[float, float],
     subject: str | None = None,
 ) -> tuple[mne.BaseEpochs, pd.DataFrame]:
     """Segment ``raw`` into epochs for one timelock and align trial metadata.
 
-    Cuts ``mne.Epochs`` from the timelock's annotation events using
-    ``spec.intervals[timelock]`` → ``(tmin, tmax)`` and the shared ``baseline``
-    window, then reconciles the by-trial ``metadata`` (US-016 output) with the
+    Cuts ``mne.Epochs`` from the timelock's annotation events using the
+    analysis-run ``interval`` → ``(tmin, tmax)`` (from ``config.yaml``
+    ``epoching.intervals``, ADR-006) and the shared ``baseline`` window, then
+    reconciles the by-trial ``metadata`` (US-016 output) with the
     cut epochs **explicitly** — mismatches are retained/logged, never silently
     dropped:
 
     * epochs with no matching metadata row → **retained with NaN metadata**
       and logged to the excluded frame as ``extra_epoch``;
     * metadata rows with no matching epoch → excluded frame, reason
-      ``no_timelock_event`` (or ``bad_interval`` when that trial's timelock
-      epoch was dropped by a US-008 bad-interval annotation);
-    * epochs overlapping a ``bad*`` annotation → dropped by
-      ``mne.Epochs(reject_by_annotation=True)`` and logged as ``bad_interval``.
+      ``no_timelock_event`` (a pure alignment miss — a trial whose epoch was
+      bad is *matched* during alignment, then logged as ``bad_interval``);
+    * epochs overlapping a ``bad*`` annotation → flagged ``BAD=True`` in
+      ``epochs.metadata`` after segmentation (so they stay present during
+      alignment, keeping Path B ``Num_Sel`` contiguous), then dropped at the
+      end and logged as ``bad_interval``.
 
     Alignment is key-based on ``(Block, Trial)`` for one-epoch-per-trial
     timelocks, and on ``(Block, Trial, Num_Sel)`` for the experiment's
     ``ExpandOnEvent`` timelock (e.g. IGT ``select``). Trial identity is
     assigned to each epoch by onset proximity to the metadata ``Onset`` column
-    (seconds, SCHEMA §2). No per-channel/per-epoch loops, no ``iterrows``.
+    (seconds, SCHEMA §2).
 
     Parameters
     ----------
@@ -171,7 +261,8 @@ def epoch_with_metadata(
         Experiment spec providing ``timelocks`` / ``intervals`` / optional
         ``trial_expander``.
     timelock : str
-        Key into ``spec.timelocks`` / ``spec.intervals``.
+        Key into ``spec.timelocks`` (the event-code map lives in the spec;
+        the ``(tmin, tmax)`` window is passed via ``interval``).
     metadata : pd.DataFrame
         By-trial metadata (US-016 ``parse_metadata`` output) with ``Block``,
         ``Trial``, ``Onset`` (seconds) and, when ``expand_trials`` was set,
@@ -179,6 +270,10 @@ def epoch_with_metadata(
     baseline : list[float] | tuple[float, float] | None
         Baseline window ``[start, end]`` in seconds (shared across timelocks,
         from ``config.yaml`` ``epoching.baseline``); ``None`` disables.
+    interval : list[float] | tuple[float, float]
+        Epoch window ``[tmin, tmax]`` in seconds for this timelock —
+        analysis-run config from ``config.yaml`` ``epoching.intervals[timelock]``
+        (ADR-006; the spec no longer carries windows).
     subject : str | None
         Subject id stamped onto excluded-frame rows for ``excluded_trials.csv``
         (SCHEMA §6). Pure label — no filesystem or signal use.
@@ -188,6 +283,8 @@ def epoch_with_metadata(
     epochs : mne.BaseEpochs
         Epochs for this timelock (shape ``(n_epochs, n_channels, n_times)``)
         with ``.metadata`` attached; extra epochs carry NaN metadata rows.
+        A boolean ``BAD`` column in ``.metadata`` flags bad-interval epochs
+        before they are dropped (survivors all carry ``BAD=False``).
     excluded : pd.DataFrame
         ``excluded_trials.csv`` content (columns ``subject, timelock, Block,
         Trial, Onset, reason``). One row per mismatched metadata row or
@@ -202,10 +299,12 @@ def epoch_with_metadata(
     evt_id: dict[str, int] = {
         label: event_id[code] for label, code in tl_map.items() if code in event_id
     }
-    tmin, tmax = spec.intervals[timelock]
+    tmin, tmax = interval
 
     target_ids = np.fromiter(evt_id.values(), dtype=int)
-    sel = np.isin(events[:, 2], target_ids) if len(target_ids) else np.zeros(len(events), dtype=bool)
+    sel = (
+        np.isin(events[:, 2], target_ids) if len(target_ids) else np.zeros(len(events), dtype=bool)
+    )
     tl_events = events[sel]
 
     expander_code = spec.trial_expander.event_code if spec.trial_expander is not None else None
@@ -226,7 +325,7 @@ def epoch_with_metadata(
         )
         return epochs, excluded
 
-    # ---- segment ----
+    # ---- segment (keep all candidates; flag bad intervals after) ----
     epochs = mne.Epochs(
         raw,
         tl_events,
@@ -234,23 +333,18 @@ def epoch_with_metadata(
         tmin=tmin,
         tmax=tmax,
         baseline=baseline,
-        reject_by_annotation=True,
+        reject_by_annotation=False,
         preload=True,
         verbose=False,
     )
     sfreq = float(epochs.info["sfreq"])
 
-    # Candidate timelock-event onsets (all, in seconds) -> kept vs dropped.
-    cand_onsets_s = tl_events[:, 0] / sfreq
-    kept_mask = np.zeros(len(tl_events), dtype=bool)
-    kept_mask[epochs.selection] = True
-    survived_onsets_s = epochs.events[:, 0] / sfreq
-    n_kept = len(epochs)
-
-    # Dropped epochs (bad-interval rejects) — onsets + reasons.
-    dropped_idx = np.flatnonzero(~kept_mask)
-    dropped_onsets_s = cand_onsets_s[dropped_idx]
-    dropped_reasons = _drop_reasons(epochs.drop_log)[dropped_idx]
+    # Bad-interval flag: ``True`` where the epoch window overlaps a ``bad*``
+    # annotation. Bad epochs stay present through alignment (so Path B
+    # ``Num_Sel`` stays contiguous) and drop at the very end.
+    bad_flag = _bad_epoch_mask(epochs, raw, tmin, tmax)
+    n_epochs = len(epochs)
+    all_onsets_s = epochs.events[:, 0] / sfreq
 
     # ---- trial-level metadata view + trial onsets (seconds) ----
     has_num_sel = "Num_Sel" in metadata.columns
@@ -268,162 +362,105 @@ def epoch_with_metadata(
         meta_exp = None
 
     trial_onsets_s = trial_meta["Onset"].to_numpy(dtype=float)
-    sorted_onsets, order = _trial_lookup(trial_meta, trial_onsets_s)
+    sorted_onsets, order = _trial_lookup(trial_onsets_s)
     bt = trial_meta[["Block", "Trial"]].to_numpy()
 
-    # Dropped epochs → nearest preceding trial (searchsorted, seconds) for
-    # the bad_interval cross-reference. -1 ⇒ before the first trial.
+    # Map epoch onsets to nearest preceding trial (searchsorted, seconds).
+    # -1 ⇒ onset precedes the first trial (NaN Block/Trial downstream).
     def _assign_trials(onsets_s: np.ndarray) -> np.ndarray:
         idx = np.searchsorted(sorted_onsets, onsets_s, side="right") - 1
         trial_row = np.where(idx >= 0, order[np.clip(idx, 0, None)], -1)
         return trial_row
 
-    dropped_trial_row = _assign_trials(dropped_onsets_s) if len(dropped_onsets_s) else np.array([], dtype=int)
-    dropped_trials = set(
-        tuple(bt[r]) for r in dropped_trial_row if r >= 0
-    )
+    def _block_trial(trial_row: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """(Block, Trial) for each row index, NaN where ``trial_row < 0``."""
+        safe = trial_row.clip(0, None)
+        block = np.where(trial_row >= 0, bt[safe, 0], np.nan)
+        trial = np.where(trial_row >= 0, bt[safe, 1], np.nan)
+        return block, trial
 
     excluded_frames: list[pd.DataFrame] = []
 
+    def _log_positions(pos: np.ndarray, reason: str) -> None:
+        """Log epoch positions to the excluded frame, trial id by onset proximity."""
+        if len(pos) == 0:
+            return
+        onsets = all_onsets_s[pos]
+        block, trial = _block_trial(_assign_trials(onsets))
+        excluded_frames.append(
+            _excluded_rows(
+                block, trial, onsets,
+                np.full(len(pos), reason, dtype=object),
+                subject, timelock,
+            )
+        )
+
+    def _log_meta_rows(frame: pd.DataFrame) -> None:
+        """Log metadata rows with no matching epoch as ``no_timelock_event``."""
+        if len(frame) == 0:
+            return
+        excluded_frames.append(
+            _excluded_rows(
+                frame["Block"].to_numpy(),
+                frame["Trial"].to_numpy(),
+                frame["Onset"].to_numpy(),
+                np.full(len(frame), "no_timelock_event", dtype=object),
+                subject, timelock,
+            )
+        )
+
     if is_expander and meta_exp is not None:
         # ---- Path B: N epochs per trial, key-join on (Block, Trial, Num_Sel) ----
-        ep = pd.DataFrame(
-            {
-                "ep_pos": np.arange(n_kept),
-                "Onset_s": survived_onsets_s,
-            }
-        )
-        ep_trial_row = _assign_trials(survived_onsets_s)
-        valid = ep_trial_row >= 0
-        valid_rows = ep_trial_row.clip(0, None)
-        ep["Block"] = np.where(valid, bt[valid_rows, 0], np.nan)
-        ep["Trial"] = np.where(valid, bt[valid_rows, 1], np.nan)
+        ep = pd.DataFrame({"Onset_s": all_onsets_s})
+        ep["Block"], ep["Trial"] = _block_trial(_assign_trials(all_onsets_s))
 
         # Rank epochs within (Block, Trial) by onset → Num_Sel (vectorized
         # groupby cumcount on the sorted-by-onset order).
-        ep_sorted = ep.loc[valid].sort_values(["Block", "Trial", "Onset_s"])
+        ep_sorted = ep.loc[ep["Block"].notna()].sort_values(["Block", "Trial", "Onset_s"])
         ep_sorted["Num_Sel"] = ep_sorted.groupby(["Block", "Trial"]).cumcount()
         ep["Num_Sel"] = np.nan
         ep.loc[ep_sorted.index, "Num_Sel"] = ep_sorted["Num_Sel"].to_numpy()
 
-        merged = ep.merge(
-            meta_exp, on=["Block", "Trial", "Num_Sel"], how="left", sort=False
-        )
+        merged = ep.merge(meta_exp, on=["Block", "Trial", "Num_Sel"], how="left", sort=False)
         aligned = merged[meta_cols].reset_index(drop=True)
-        epochs.metadata = aligned
 
         # Excluded metadata rows: expanded rows with no matching epoch.
-        matched_keys = (
-            merged.loc[merged["Num_Sel"].notna(), ["Block", "Trial", "Num_Sel"]]
-            .drop_duplicates()
-        )
+        matched_keys = merged.loc[
+            merged["Num_Sel"].notna(), ["Block", "Trial", "Num_Sel"]
+        ].drop_duplicates()
         unmatched = meta_exp.merge(
             matched_keys, on=["Block", "Trial", "Num_Sel"], how="left", indicator=True
         )
-        unmatched = unmatched[unmatched["_merge"] == "left_only"].drop(columns="_merge")
-        if len(unmatched):
-            ubt = unmatched[["Block", "Trial"]].to_numpy()
-            is_bad = np.array([tuple(r) in dropped_trials for r in ubt])
-            reasons = np.where(is_bad, "bad_interval", "no_timelock_event")
-            excluded_frames.append(
-                _excluded_rows(
-                    unmatched["Block"].to_numpy(),
-                    unmatched["Trial"].to_numpy(),
-                    unmatched["Onset"].to_numpy(),
-                    reasons,
-                    subject,
-                    timelock,
-                )
-            )
-        # Extra epochs (no trial or no matching Num_Sel row): retained NaN,
-        # logged as extra_epoch.
-        extra_mask = merged["Num_Sel"].isna() if "Num_Sel" in merged else np.ones(n_kept, dtype=bool)
-        extra_mask = aligned["Block"].isna().to_numpy() if "Block" in aligned else extra_mask.to_numpy()
-        if extra_mask.any():
-            extra_pos = np.flatnonzero(extra_mask)
-            extra_onsets = survived_onsets_s[extra_pos]
-            extra_trial_row = ep_trial_row[extra_pos]
-            extra_block = np.where(
-                extra_trial_row >= 0, bt[extra_trial_row.clip(0, None), 0], np.nan
-            )
-            extra_trial = np.where(
-                extra_trial_row >= 0, bt[extra_trial_row.clip(0, None), 1], np.nan
-            )
-            excluded_frames.append(
-                _excluded_rows(
-                    extra_block,
-                    extra_trial,
-                    extra_onsets,
-                    np.full(len(extra_pos), "extra_epoch", dtype=object),
-                    subject,
-                    timelock,
-                )
-            )
+        _log_meta_rows(unmatched[unmatched["_merge"] == "left_only"])
     else:
         # ---- Path A: 1 epoch per trial, reciprocal onset match on seconds ----
-        matched_ep, matched_meta = _match_onsets(survived_onsets_s, trial_onsets_s)
-        aligned = pd.DataFrame(np.nan, index=np.arange(n_kept), columns=meta_cols)
+        matched_ep, matched_meta = _match_onsets(all_onsets_s, trial_onsets_s)
+        aligned = pd.DataFrame(np.nan, index=np.arange(n_epochs), columns=meta_cols)
         if len(matched_ep):
             aligned.iloc[matched_ep] = trial_meta.iloc[matched_meta][meta_cols].to_numpy()
-        epochs.metadata = aligned.reset_index(drop=True)
 
         # Excluded metadata rows (trials with no surviving epoch).
-        matched_meta_set = set(matched_meta.tolist()) if len(matched_meta) else set()
-        all_rows = np.arange(len(trial_meta))
-        unmatched_rows = np.setdiff1d(all_rows, np.asarray(list(matched_meta_set), dtype=int)) \
-            if matched_meta_set else all_rows
-        if len(unmatched_rows):
-            ubt = bt[unmatched_rows]
-            is_bad = np.array([tuple(r) in dropped_trials for r in ubt])
-            reasons = np.where(is_bad, "bad_interval", "no_timelock_event")
-            excluded_frames.append(
-                _excluded_rows(
-                    bt[unmatched_rows, 0],
-                    bt[unmatched_rows, 1],
-                    trial_onsets_s[unmatched_rows],
-                    reasons,
-                    subject,
-                    timelock,
-                )
-            )
-        # Extra epochs (survived but no metadata match): retained NaN, logged.
-        extra_pos = np.setdiff1d(np.arange(n_kept), matched_ep)
-        if len(extra_pos):
-            extra_onsets = survived_onsets_s[extra_pos]
-            extra_trial_row = _assign_trials(extra_onsets)
-            extra_block = np.where(
-                extra_trial_row >= 0, bt[extra_trial_row.clip(0, None), 0], np.nan
-            )
-            extra_trial = np.where(
-                extra_trial_row >= 0, bt[extra_trial_row.clip(0, None), 1], np.nan
-            )
-            excluded_frames.append(
-                _excluded_rows(
-                    extra_block,
-                    extra_trial,
-                    extra_onsets,
-                    np.full(len(extra_pos), "extra_epoch", dtype=object),
-                    subject,
-                    timelock,
-                )
-            )
+        unmatched_rows = np.setdiff1d(np.arange(len(trial_meta)), matched_meta)
+        _log_meta_rows(trial_meta.iloc[unmatched_rows])
 
-    # Bad-interval-dropped epochs that did NOT map to any metadata trial still
-    # get a drop log entry (reason bad_interval / dropped), with NaN trial id.
-    if len(dropped_onsets_s):
-        dropped_no_trial = dropped_trial_row < 0
-        if dropped_no_trial.any():
-            pos = np.flatnonzero(dropped_no_trial)
-            excluded_frames.append(
-                _excluded_rows(
-                    np.full(pos.size, np.nan),
-                    np.full(pos.size, np.nan),
-                    dropped_onsets_s[pos],
-                    dropped_reasons[pos],
-                    subject,
-                    timelock,
-                )
-            )
+    # Attach metadata (BAD flags bad-interval epochs; survivors carry False).
+    aligned["BAD"] = bad_flag
+    epochs.metadata = aligned.reset_index(drop=True)
+
+    # Extra epochs: retained NaN-metadata epochs that are not bad. Bad no-trial
+    # epochs are excluded below as ``bad_interval`` (precedence over extra_epoch).
+    extra_pos = np.flatnonzero(aligned["Block"].isna().to_numpy() & ~bad_flag)
+    _log_positions(extra_pos, "extra_epoch")
+
+    # Bad-interval epochs drop at the very end: they survived segmentation and
+    # participated in alignment (keeping Path B ``Num_Sel`` contiguous), so each
+    # is logged as ``bad_interval`` with ``(Block, Trial)`` when it mapped to a
+    # trial, else NaN trial.
+    _log_positions(np.flatnonzero(bad_flag), "bad_interval")
+
+    # Drop bad epochs now (the ``BAD`` column stays in ``epochs.metadata`` for
+    # audit); survivors all carry ``BAD=False``.
+    epochs = epochs[~bad_flag]
 
     excluded = (
         pd.concat(excluded_frames, ignore_index=True)
@@ -445,6 +482,4 @@ def _empty_epochs(
     data = np.zeros((0, len(raw.info["ch_names"]), max(n_times, 1)), dtype=np.float64)
     # Explicit ``drop_log=()`` avoids MNE's default drop-log computation, which
     # calls ``max(self.selection)`` and raises on an empty (zero-epoch) selection.
-    return mne.EpochsArray(
-        data, raw.info, tmin=tmin, baseline=baseline, drop_log=(), verbose=False
-    )
+    return mne.EpochsArray(data, raw.info, tmin=tmin, baseline=baseline, drop_log=(), verbose=False)

@@ -6,10 +6,6 @@ timelocks:
     all: "Stim/S 14"
   resp:
     yes: "Stim/S 30"
-intervals:
-  dots: [0.2, 1.0]
-  cue: [0.2, 1.0]
-  resp: [-1.2, 0.2]
 trial_codes:
   - "Stim/S  9"
 block_codes:

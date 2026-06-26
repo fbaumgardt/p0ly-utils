@@ -156,7 +156,8 @@ class ExperimentSpec:
     """Declarative description of one experiment's metadata extraction.
 
     Fields:
-      timelocks / intervals: epoching config consumed downstream of the parser.
+      timelocks: event-code map consumed by the parser (``column_codes``)
+        and by ``epoch_with_metadata`` (which timelocks exist).
       trial_codes / block_codes: markers that delimit trials and blocks.
       columns: output column name -> extractor.
       trial_end: see parser._assign_blocks_trials (shift amount, 0 or 1).
@@ -168,7 +169,6 @@ class ExperimentSpec:
 
     name: str
     timelocks: dict[str, dict[str, str]]
-    intervals: dict[str, tuple[float, float]]
     trial_codes: list[str]
     columns: dict[str, ColumnExtractor]
     block_codes: list[str] = field(default_factory=list)
@@ -284,7 +284,6 @@ class ExperimentSpec:
         return cls(
             name=data["name"],
             timelocks=data["timelocks"],
-            intervals=data["intervals"],
             trial_codes=trial_codes,
             columns=columns,
             block_codes=data.get("block_codes", []),

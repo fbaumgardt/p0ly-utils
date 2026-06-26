@@ -6,10 +6,6 @@ timelocks:
     all: "Stim/S 50"
   fdb:
     all: "Stim/S 60"
-intervals:
-  select: [-1.2, 0.2]
-  submit: [-1.2, 0.2]
-  fdb: [-0.2, 1.2]
 trial_codes:
   - "Stim/S 30"
 block_codes:
