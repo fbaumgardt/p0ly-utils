@@ -166,7 +166,6 @@ class TestExperimentSpec:
         defaults: dict[str, Any] = dict(
             name="test",
             timelocks={},
-            intervals={},
             trial_codes=["T1"],
             columns={},
             block_codes=[],

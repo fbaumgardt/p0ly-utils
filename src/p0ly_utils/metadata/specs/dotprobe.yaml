@@ -1,0 +1,46 @@
+name: dotprobe
+timelocks:
+  dots:
+    all: "Stim/S 41"
+  cue:
+    all: "Stim/S 14"
+  resp:
+    yes: "Stim/S 30"
+trial_codes:
+  - "Stim/S  9"
+block_codes:
+  - "Stim/S103"
+columns:
+  Cue_type:
+    type: code_lookup
+    code_map:
+      salient: "Stim/S 11"
+      mix: "Stim/S 12"
+      neutral: "Stim/S 13"
+  Cue_format:
+    type: code_lookup
+    code_map:
+      TN: "Stim/S 16"
+      NT: "Stim/S 17"
+  Dot_type:
+    type: code_lookup
+    code_map:
+      vertical: "Stim/S 43"
+      horizontal: "Stim/S 44"
+  Dot_side:
+    type: code_lookup
+    code_map:
+      left: "Stim/S 45"
+      right: "Stim/S 46"
+  Resp_type:
+    type: code_lookup
+    code_map:
+      top: "Stim/S 37"
+      bottom: "Stim/S 38"
+  Correct:
+    type: bool_presence
+    code: "Stim/S 34"
+rt_defs:
+  - name: RT
+    start: ["Stim/S 14"]
+    end: ["Stim/S 30"]

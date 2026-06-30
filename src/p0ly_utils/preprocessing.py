@@ -429,7 +429,7 @@ def preprocess_raw(
     # 3. Set preliminary average EEG reference
     raw.set_eeg_reference()
 
-    # 3. ICA on the cleaned continuous raw. ica_strategy=None skips ICA;
+    # 4. ICA on the cleaned continuous raw. ica_strategy=None skips ICA;
     #    an unrecognised string is still an error (None != invalid strategy).
     if ica_strategy is not None:
         if ica_strategy == "mne-icalabel":
@@ -442,7 +442,7 @@ def preprocess_raw(
                 "(expected 'mne-icalabel', 'find_bads_eog', or None to skip ICA)."
             )
 
-    # 4. sliding-window reject on continuous data -> Annotations persisted.
+    # 5. sliding-window reject on continuous data -> Annotations persisted.
     #    Both the window size and the threshold are required to run the step.
     if interval_window_ms is not None and interval_reject_z_thresh is not None:
         annots = artefact_rejection(

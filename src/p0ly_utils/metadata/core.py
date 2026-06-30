@@ -3,9 +3,12 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from functools import partial
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
+import yaml
 
 
 class ColumnExtractor(ABC):
@@ -153,7 +156,8 @@ class ExperimentSpec:
     """Declarative description of one experiment's metadata extraction.
 
     Fields:
-      timelocks / intervals: epoching config consumed downstream of the parser.
+      timelocks: event-code map consumed by the parser (``column_codes``)
+        and by ``epoch_with_metadata`` (which timelocks exist).
       trial_codes / block_codes: markers that delimit trials and blocks.
       columns: output column name -> extractor.
       trial_end: see parser._assign_blocks_trials (shift amount, 0 or 1).
@@ -165,7 +169,6 @@ class ExperimentSpec:
 
     name: str
     timelocks: dict[str, dict[str, str]]
-    intervals: dict[str, tuple[float, float]]
     trial_codes: list[str]
     columns: dict[str, ColumnExtractor]
     block_codes: list[str] = field(default_factory=list)
@@ -196,3 +199,97 @@ class ExperimentSpec:
         # Full marker allowlist for the initial _select_events filter: column
         # codes plus the structural trial/block delimiters.
         return set(self.trial_codes) | set(self.block_codes) | self.column_codes()
+
+    @classmethod
+    def from_yaml(cls, path: str | Path) -> ExperimentSpec:
+        """Load an ExperimentSpec from a YAML config file.
+
+        See PLAN_US005.md for the YAML format specification.
+        """
+        # Import here to avoid circular dependency at module level.
+        from p0ly_utils.metadata.transforms import TRANSFORM_REGISTRY
+
+        data = yaml.safe_load(Path(path).read_text())
+
+        # --- Resolve extractors from column configs ---
+        columns: dict[str, ColumnExtractor] = {}
+        for col_name, cfg in data.get("columns", {}).items():
+            col_name = str(col_name)
+            cfg = dict(cfg)  # shallow copy to avoid mutating loaded data
+            etype = cfg.pop("type")
+            if etype == "code_lookup":
+                columns[col_name] = CodeLookup(**cfg)
+            elif etype == "int_sum":
+                columns[col_name] = IntSum(**cfg)
+            elif etype == "bool_presence":
+                columns[col_name] = BoolPresence(**cfg)
+            elif etype == "list_collect":
+                columns[col_name] = ListCollect(**cfg)
+            elif etype == "derived":
+                fn_name: str = cfg.pop("fn")
+                fn = TRANSFORM_REGISTRY[fn_name]
+                with_kwargs = cfg.pop("with", None)
+                if with_kwargs:
+                    fn = partial(fn, **with_kwargs)
+                columns[col_name] = DerivedColumn(fn=fn, **cfg)
+            else:
+                raise ValueError(
+                    f"Unknown extractor type '{etype}' for column '{col_name}'"
+                )
+
+        # --- Resolve RTMeasure list ---
+        rt_defs: list[RTMeasure] = [
+            RTMeasure(**cfg) for cfg in data.get("rt_defs", [])
+        ]
+
+        # --- Resolve trial_expander if present ---
+        trial_expander: ExpandOnEvent | None = None
+        if data.get("trial_expander") is not None:
+            exp_cfg = dict(data["trial_expander"])
+            event_code: str = exp_cfg.pop("event_code")
+            per_col_configs: dict = exp_cfg.pop("per_event_columns", {})
+            per_event_columns: dict[str, ColumnExtractor] = {}
+            for col_name, ecfg in per_col_configs.items():
+                ecfg = dict(ecfg)
+                etype = ecfg.pop("type")
+                if etype == "list_collect":
+                    per_event_columns[str(col_name)] = ListCollect(**ecfg)
+                else:
+                    raise ValueError(
+                        f"Unsupported per_event_column type '{etype}' "
+                        f"for column '{col_name}'"
+                    )
+            trial_expander = ExpandOnEvent(
+                event_code=event_code,
+                per_event_columns=per_event_columns,
+                **exp_cfg,
+            )
+
+        # --- Resolve csv_columns if present ---
+        csv_columns: dict[str, tuple[str, Callable[[Any], Any]]] | None = None
+        if data.get("csv_columns") is not None:
+            csv_columns = {}
+            for out_col, (csv_col, xform_name) in data["csv_columns"].items():
+                xform = TRANSFORM_REGISTRY[xform_name]
+                csv_columns[str(out_col)] = (str(csv_col), xform)
+
+        # --- Handle trial_codes_range shorthand ---
+        trial_codes: list[str]
+        if "trial_codes_range" in data:
+            start, end = data["trial_codes_range"]
+            trial_codes = [f"Stim/S {n}" for n in range(start, end + 1)]
+        else:
+            trial_codes = list(data["trial_codes"])
+
+        return cls(
+            name=data["name"],
+            timelocks=data["timelocks"],
+            trial_codes=trial_codes,
+            columns=columns,
+            block_codes=data.get("block_codes", []),
+            trial_end=data.get("trial_end", False),
+            rt_defs=rt_defs,
+            trial_expander=trial_expander,
+            csv_columns=csv_columns,
+            infer_block_from=data.get("infer_block_from"),
+        )

@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import math
 
+import mne
+import numpy as np
 import pandas as pd
 import pytest
 
 from p0ly_utils.metadata import dmss, dotprobe, igt, intwm, mgsearch, simonfb
+from p0ly_utils.metadata.parser import events_from_raw, parse_metadata
 
 
 def _events(rows: list[tuple[float, str]]) -> pd.DataFrame:
@@ -333,3 +336,62 @@ class TestNegativeRT:
         ])
         result = dmss.get_metadata(events)
         assert result["RT"].iloc[0] < 0
+
+
+# ---------------------------------------------------------------------------
+# events_from_raw: raw.annotations -> parser event frame (US-016)
+# ---------------------------------------------------------------------------
+
+def _raw_with_annotations(rows: list[tuple[float, str]]) -> mne.io.Raw:
+    """Build a tiny Raw carrying Psychtoolbox-style marker annotations."""
+    sfreq = 100.0
+    onsets = [t for t, _ in rows]
+    descriptions = [d for _, d in rows]
+    info = mne.create_info(["Cz"], sfreq, ch_types=["eeg"])
+    # 2 s of zeros, long enough to host the test markers (max ~2.0 s).
+    data = np.zeros((1, int(sfreq * 2.0)))
+    raw = mne.io.RawArray(data, info, verbose=False)
+    raw.set_annotations(mne.Annotations(onset=onsets, duration=[0.0] * len(rows), description=descriptions))
+    return raw
+
+
+class TestEventsFromRaw:
+    def test_extracts_description_and_onset_columns(self):
+        raw = _raw_with_annotations([(0.1, "Stim/S  3"), (0.5, "Stim/S 11")])
+        events = events_from_raw(raw)
+        assert list(events.columns) == ["description", "onset"]
+        assert list(events["description"]) == ["Stim/S  3", "Stim/S 11"]
+        assert events["onset"].tolist() == pytest.approx([0.1, 0.5])
+
+    def test_empty_raw_returns_empty_frame_with_columns(self):
+        raw = _raw_with_annotations([])
+        events = events_from_raw(raw)
+        assert events.empty
+        assert list(events.columns) == ["description", "onset"]
+
+    def test_feeds_parse_metadata_for_core_and_extended_columns(self):
+        # Two dmss trials wrapped in one block (mirrors DMSS_EVENTS) annotated
+        # onto a Raw; the full raw -> metadata path must reproduce the column
+        # shape parse_metadata expects.
+        raw = _raw_with_annotations([
+            (0.0, "Stim/S  3"),   # block start
+            (0.1, "Stim/S  5"),   # trial 1 start
+            (0.2, "Stim/S 11"),   # Size=1
+            (0.5, "Stim/S 57"),   # RT start
+            (1.0, "Stim/S 64"),   # Correct
+            (1.2, "Stim/S  6"),   # trial 1 end
+            (1.3, "Stim/S  5"),   # trial 2 start
+            (1.4, "Stim/S 25"),   # Size=2
+            (1.5, "Stim/S 57"),
+            (1.8, "Stim/S 60"),
+            (1.9, "Stim/S  6"),
+        ])
+        events = events_from_raw(raw)
+        result = parse_metadata(dmss.spec, events)
+
+        # AC: core columns + at least one extended column.
+        assert {"Block", "Trial", "Onset"}.issubset(result.columns)
+        assert {"RT", "Correct", "Size"}.issubset(result.columns)
+        assert len(result) == 2
+        assert list(result["Trial"]) == [1, 2]
+        assert list(result["Block"]) == [1, 1]

@@ -826,6 +826,7 @@ dependencies = [
     { name = "numpy" },
     { name = "onnxruntime" },
     { name = "pandas" },
+    { name = "pyyaml" },
     { name = "scikit-learn" },
 ]
 
@@ -849,6 +850,7 @@ requires-dist = [
     { name = "numpy", specifier = ">=2.4.6" },
     { name = "onnxruntime", specifier = ">=1.26.0" },
     { name = "pandas", specifier = ">=3.0.3" },
+    { name = "pyyaml", specifier = ">=6.0" },
     { name = "scikit-learn", specifier = ">=1.9.0" },
 ]
 
