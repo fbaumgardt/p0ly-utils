@@ -9,7 +9,7 @@ import pybv
 import pytest
 from mne_bids import BIDSPath, write_raw_bids
 
-from p0ly_utils.io import load_raw
+from p0ly_utils.io import load_raw, load_raw_bids, load_raw_brainvision
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -71,7 +71,7 @@ class TestLoadRawBrainVision:
         raw = _synthetic_raw()
         vhdr = _write_brainvision(raw, tmp_path, "001", "rest")
 
-        out = load_raw("BrainVision", "001", tmp_path, task="rest")
+        out = load_raw_brainvision(vhdr)
 
         assert vhdr.exists()
         assert out.ch_names == raw.ch_names
@@ -83,9 +83,22 @@ class TestLoadRawBrainVision:
         )
 
     def test_montage_is_configurable(self, tmp_path: Path) -> None:
-        _write_brainvision(_synthetic_raw(), tmp_path, "002", "rest")
-        out = load_raw("BrainVision", "002", tmp_path, task="rest", montage="easycap-M10")
+        vhdr = _write_brainvision(_synthetic_raw(), tmp_path, "002", "rest")
+        out = load_raw_brainvision(vhdr, montage="easycap-M10")
         assert out.get_montage() is not None
+
+    def test_accepts_str_and_path(self, tmp_path: Path) -> None:
+        vhdr = _write_brainvision(_synthetic_raw(), tmp_path, "003", "rest")
+        from_str = load_raw_brainvision(str(vhdr))
+        from_path = load_raw_brainvision(vhdr)
+        assert from_str.ch_names == from_path.ch_names == _CH_NAMES
+
+    def test_load_raw_dispatches_path_to_brainvision(self, tmp_path: Path) -> None:
+        vhdr = _write_brainvision(_synthetic_raw(), tmp_path, "004", "rest")
+        via_str = load_raw(str(vhdr))
+        via_path = load_raw(vhdr)
+        assert via_str.ch_names == via_path.ch_names == _CH_NAMES
+        assert via_str.get_montage() is not None
 
 
 # ---------------------------------------------------------------------------
@@ -98,16 +111,24 @@ class TestLoadRawBids:
         raw = _synthetic_raw()
         bp = _write_bids(raw, tmp_path, "001", "rest")
 
-        out = load_raw("BIDS", "001", tmp_path, task="rest")
+        out = load_raw_bids(bp)
 
         assert bp.fpath.exists()
         assert out.ch_names == raw.ch_names
 
     def test_applies_montage_when_sidecar_lacks_one(self, tmp_path: Path) -> None:
         # Synthetic RawArray has no montage -> BIDS sidecar carries none -> fallback applies.
-        _write_bids(_synthetic_raw(), tmp_path, "001", "rest")
-        out = load_raw("BIDS", "001", tmp_path, task="rest")
+        bp = _write_bids(_synthetic_raw(), tmp_path, "001", "rest")
+        out = load_raw_bids(bp)
         assert out.get_montage() is not None
+
+    def test_load_raw_dispatches_bidspath_to_bids(self, tmp_path: Path) -> None:
+        raw = _synthetic_raw()
+        bp = _write_bids(raw, tmp_path, "001", "rest")
+
+        out = load_raw(bp)
+
+        assert out.ch_names == raw.ch_names
 
 
 # ---------------------------------------------------------------------------
@@ -116,13 +137,15 @@ class TestLoadRawBids:
 
 
 class TestLoadRawDispatch:
-    @pytest.mark.parametrize("fmt", ["edf", "EDF", "csv", "", "brainvision"])
-    def test_invalid_format_raises_value_error(self, fmt: str, tmp_path: Path) -> None:
-        with pytest.raises(ValueError, match="Unsupported input_format"):
-            load_raw(fmt, "001", tmp_path, task="rest")
+    @pytest.mark.parametrize("bad_source", [123, None, 3.14, ["a", "b"], {"k": 1}])
+    def test_unsupported_source_type_raises_type_error(
+        self, bad_source: object, tmp_path: Path
+    ) -> None:
+        with pytest.raises(TypeError, match="Unsupported source type"):
+            load_raw(bad_source)  # type: ignore[arg-type]
 
     def test_default_montage_is_easycap_m1(self, tmp_path: Path) -> None:
-        _write_brainvision(_synthetic_raw(), tmp_path, "001", "rest")
-        out = load_raw("BrainVision", "001", tmp_path, task="rest")
+        vhdr = _write_brainvision(_synthetic_raw(), tmp_path, "001", "rest")
+        out = load_raw(vhdr)
         # easycap-M1 is the documented default; confirm a position is present.
         assert out.get_montage() is not None

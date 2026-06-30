@@ -1,98 +1,122 @@
 """Raw EEG ingestion dispatcher.
 
-Single entry point :func:`load_raw` selects a per-format reader based on the
-``fmt`` argument. BrainVision recordings are read with
-:func:`mne.io.read_raw_brainvision`; BIDS datasets are read with
-:func:`mne_bids.read_raw_bids`. EOG channels are marked and the ``montage``
-argument is applied only when the recording has no montage set.
+Single entry point :func:`load_raw` selects a per-format reader by dispatching
+on the **type** of ``source``:
+
+* ``str | Path | os.PathLike`` → BrainVision reader (a concrete ``.vhdr`` path).
+* :class:`mne_bids.BIDSPath`   → mne-bids reader (``read_raw_bids``).
+
+The library is **path- and layout-agnostic** (ADR-005): it composes no
+filesystem paths and builds no :class:`BIDSPath`. The pipeline owns all layout
+(``sub-{subject}_task-{task}.vhdr`` naming, BIDS entity construction) and
+hands the library a fully resolved ``source``.
 
 This module is stateless and decoupled from Snakemake: it reads from the
 filesystem and returns an :class:`mne.io.BaseRaw` but never writes derivative
 files. Pipeline scripts are responsible for saving.
+
+Forward compatibility (US-009): the ``str | Path`` branch will widen to also
+accept ``list[str | Path]`` for multi-segment recording merge, with no
+dispatcher rewrite.
 """
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import mne
 from mne_bids import BIDSPath, read_raw_bids
 
-__all__ = ["load_raw"]
+__all__ = ["load_raw", "load_raw_brainvision", "load_raw_bids"]
 
 
-def _read_brainvision(
-    data_dir: Path,
-    subject: str,
-    task: str,
-    montage: str,
+def load_raw_brainvision(
+    vhdr: str | Path | os.PathLike,
+    montage: str = "easycap-M1",
 ) -> mne.io.BaseRaw:
-    """Read a BrainVision ``.vhdr`` (with ``.eeg``/``.vmrk`` siblings) and
-    set channel types and montage (if missing).
+    """Read a BrainVision recording from a concrete ``.vhdr`` file path.
 
-    Expected layout: ``{data_dir}/sub-{subject}/sub-{subject}_task-{task}.vhdr``.
+    The ``.eeg`` / ``.vmrk`` siblings are resolved by
+    :func:`mne.io.read_raw_brainvision`. EOG channels are marked and ``montage``
+    is applied only when the recording has no montage set.
+
+    Parameters
+    ----------
+    vhdr
+        Concrete path to the BrainVision ``.vhdr`` header file (any path-like
+        object). Pipeline-owned; the library composes no paths.
+    montage
+        MNE builtin montage name applied when the recording has none. Default
+        ``"easycap-M1"``.
+
+    Returns
+    -------
+    raw : mne.io.BaseRaw
+        Raw object with montage set. Shape of ``raw.get_data()`` is
+        ``(n_channels, n_times)`` (see SCHEMA §1).
     """
-    vhdr = data_dir / f"sub-{subject}" / f"sub-{subject}_task-{task}.vhdr"
-    raw = mne.io.read_raw_brainvision(vhdr, preload=False, verbose="ERROR")
-    raw.set_channel_types({k:'eog' for k in raw.ch_names if "EOG" in k.upper()})
+    raw = mne.io.read_raw_brainvision(Path(vhdr), preload=False, verbose="ERROR")
+    raw.set_channel_types({k: "eog" for k in raw.ch_names if "EOG" in k.upper()})
     if raw.get_montage() is None:
         raw.set_montage(montage, on_missing="ignore")
     return raw
 
 
-def _read_bids(
-    data_dir: Path,
-    subject: str,
-    task: str,
-    montage: str,
-    datatype: str,
+def load_raw_bids(
+    bids_path: BIDSPath,
+    montage: str = "easycap-M1",
 ) -> mne.io.BaseRaw:
     """Read a BIDS EEG recording via :func:`mne_bids.read_raw_bids`.
 
-    ``data_dir`` is the BIDS dataset root. ``montage`` is applied only when the
+    The :class:`BIDSPath` is constructed by the **pipeline** (ADR-005); the
+    library builds no BIDS entities. ``montage`` is applied only when the
     sidecar did not provide one.
+
+    Parameters
+    ----------
+    bids_path
+        Pipeline-constructed :class:`mne_bids.BIDSPath` identifying the
+        recording. ``read_raw_bids`` resolves the concrete file at runtime.
+    montage
+        MNE builtin montage name applied when the sidecar lacks one. Default
+        ``"easycap-M1"``.
+
+    Returns
+    -------
+    raw : mne.io.BaseRaw
+        Raw object with montage set. Shape of ``raw.get_data()`` is
+        ``(n_channels, n_times)`` (see SCHEMA §1).
     """
-    bids_path = BIDSPath(
-        subject=subject,
-        task=task,
-        datatype=datatype,
-        root=str(data_dir),
-    )
     raw = read_raw_bids(bids_path=bids_path, verbose="ERROR")
-    raw.set_channel_types({k:'eog' for k in raw.ch_names if "EOG" in k.upper()})
+    raw.set_channel_types({k: "eog" for k in raw.ch_names if "EOG" in k.upper()})
     if raw.get_montage() is None:
         raw.set_montage(montage, on_missing="ignore")
     return raw
 
 
 def load_raw(
-    fmt: str,
-    subject: str,
-    data_dir: str | Path,
-    task: str,
+    source: str | Path | os.PathLike | BIDSPath,
     montage: str = "easycap-M1",
-    datatype: str = "eeg",
 ) -> mne.io.BaseRaw:
-    """Dispatch to a per-format raw reader and return a montage-set ``Raw``.
+    """Dispatch to a per-format raw reader based on the type of ``source``.
+
+    The library composes no paths and builds no :class:`BIDSPath` (ADR-005);
+    the pipeline owns all filesystem layout and BIDS entity construction.
 
     Parameters
     ----------
-    fmt
-        Input format: ``"BrainVision"`` or ``"BIDS"``.
-    subject
-        Bare subject id, e.g. ``"001"`` (referenced as ``sub-{subject}`` in paths).
-    data_dir
-        Dataset root. For BrainVision this is the directory containing
-        ``sub-{subject}/`` folders; for BIDS it is the BIDS dataset root.
-    task
-        Task label, embedded in BrainVision filenames and used as the BIDS
-        ``task`` entity.
+    source
+        Pipeline-resolved source identifying the recording:
+
+        * ``str | Path | os.PathLike`` → a concrete BrainVision ``.vhdr`` path.
+        * :class:`mne_bids.BIDSPath`    → a BIDS recording.
+
+        US-009 will widen the ``str | Path`` branch to also accept
+        ``list[str | Path]`` for multi-segment recording merge.
     montage
-        MNE builtin montage name applied to the BrainVision recording (and to
-        the BIDS recording only when the sidecar lacks one). Default
-        ``"easycap-M1"``.
-    datatype
-        BIDS datatype entity (default ``"eeg"``). Ignored for BrainVision.
+        MNE builtin montage name. Applied to BrainVision always (when missing)
+        and to BIDS only when the sidecar lacks one. Default ``"easycap-M1"``.
 
     Returns
     -------
@@ -102,14 +126,18 @@ def load_raw(
 
     Raises
     ------
-    ValueError
-        If ``fmt`` is not a supported format.
+    TypeError
+        If ``source`` is not a supported type (a path-like object for
+        BrainVision or a :class:`BIDSPath` for BIDS).
     """
-    data_dir = Path(data_dir)
-    match fmt:
-        case "BrainVision":
-            return _read_brainvision(data_dir, subject, task, montage)
-        case "BIDS":
-            return _read_bids(data_dir, subject, task, montage, datatype)
-        case _:
-            raise ValueError(f"Unsupported input_format {fmt!r}. Expected 'BrainVision' or 'BIDS'.")
+    # BIDSPath first: it is not a Path subclass, but checking it before the
+    # path-like arm keeps the dispatch unambiguous.
+    if isinstance(source, BIDSPath):
+        return load_raw_bids(source, montage)
+    if isinstance(source, (str, Path, os.PathLike)):
+        return load_raw_brainvision(source, montage)
+    raise TypeError(
+        f"Unsupported source type {type(source).__name__!r}. "
+        "Expected a concrete path (str | Path) for BrainVision or "
+        "an mne_bids.BIDSPath for BIDS."
+    )
